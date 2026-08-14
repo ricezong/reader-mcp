@@ -1,0 +1,45 @@
+server:
+  port: 8081
+  # 解决中文参数乱码
+  tomcat:
+    uri-encoding: UTF-8
+    # 多人并发场景下增大线程数（默认 200），SYNC 模式每个请求阻塞一个线程
+    threads:
+      max: 400
+      min-spare: 20
+    # 增大连接队列，防止并发请求被拒绝
+    max-connections: 10000
+    accept-count: 200
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+spring:
+  application:
+    name: reader-mcp
+
+  # Spring AI MCP Server 配置（Streamable-HTTP 传输）
+  ai:
+    mcp:
+      server:
+        name: reader-mcp
+        version: 1.0.0
+        protocol: STREAMABLE
+        type: SYNC
+        # 向 AI 客户端描述服务器能力，帮助模型更精准地选择工具
+        instructions: "小说/漫画下载器 MCP 服务，支持多书源搜索小说和漫画、按作者查询作品、获取书籍详情、章节目录、单章正文和批量下载章节正文内容。书源 URL 可通过 reader_list_sources 获取，搜索时可指定书源或传 all 聚合搜索。"
+        # 批量下载场景需要更长的超时
+        request-timeout: 120s
+        capabilities:
+          tool: true
+        streamable-http:
+          mcpEndpoint: /mcp
+
+# 下载器配置
+reader:
+  # 单次搜索结果上限
+  max-search-results: 50
+  # 单次下载章节数上限（防止滥用）
+  max-download-chapters: 200

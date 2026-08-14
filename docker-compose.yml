@@ -1,0 +1,21 @@
+services:
+  reader-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: reader-mcp:1.0.0
+    container_name: reader-mcp
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      # 可通过环境变量覆盖配置
+      # - READER_MAX_SEARCH_RESULTS=50
+      # - READER_MAX_DOWNLOAD_CHAPTERS=200
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf -X POST http://localhost:8081/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"hc\",\"version\":\"1.0.0\"}}}' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3

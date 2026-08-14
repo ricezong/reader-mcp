@@ -2,6 +2,7 @@ package cn.kong.reader;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * 小说/漫画下载器 MCP 服务 Spring Boot 启动类。
@@ -11,6 +12,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * 底层引擎 reader-engine 内置 4 个小说源 + 4 个漫画源，开箱即用。
  */
 @SpringBootApplication
+@EnableScheduling
 public class ReaderApplication {
 
     public static void main(String[] args) {

@@ -11,6 +11,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -34,6 +38,9 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ReaderApi {
 
     private static final Logger log = LoggerFactory.getLogger(ReaderApi.class);
+
+    private final DownloadFileManager fileManager;
+
 
     /** 搜索缓存最大条目数 */
     private static final int MAX_SEARCH_CACHE_SIZE = 500;
@@ -72,6 +79,13 @@ public class ReaderApi {
 
     @Value("${reader.max-download-chapters:200}")
     private int maxDownloadChapters;
+
+    /**
+     * 构造方法注入下载文件管理器。
+     */
+    public ReaderApi(DownloadFileManager fileManager) {
+        this.fileManager = fileManager;
+    }
 
     // ---------- 源管理 ----------
 
@@ -400,15 +414,16 @@ public class ReaderApi {
     // ---------- 批量下载 ----------
 
     /**
-     * 批量下载章节正文，返回拼接后的完整内容。
+     * 批量下载章节正文，将内容写入临时 TXT 文件并返回文件信息。
      *
      * <p>使用 BookSourceManager 的批量下载 API，引擎内部已处理并发和线程安全。
+     * 下载完成后将拼接后的全文写入临时文件，文件 24 小时后自动过期。
      *
      * @param sourceUrl 书源 URL
      * @param bookUrl   书籍 URL
      * @param start     起始章节序号（从 1 开始）
      * @param end       结束章节序号
-     * @return 包含正文内容、下载统计信息的结果
+     * @return 包含文件 ID、文件名、下载统计信息的结果（不含正文内容）
      */
     public Map<String, Object> downloadChapters(String sourceUrl, String bookUrl, int start, int end) {
         BookSource src = manager.getSource(sourceUrl);
@@ -469,8 +484,24 @@ public class ReaderApi {
             sb.append("\n\n");
         }
 
+        // 写入临时文件
+        String txtFileName = bookName + "_" + start + "-" + to + ".txt";
+        DownloadFileManager.FileMeta fileMeta;
+        try {
+            fileMeta = fileManager.createFile(txtFileName);
+            Files.write(Paths.get(fileMeta.getFilePath()),
+                    sb.toString().getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            log.error("写入下载文件失败: fileName={}", txtFileName, e);
+            throw new RuntimeException("写入下载文件失败: " + e.getMessage());
+        }
+
+        long fileSize = sb.length();
+
         Map<String, Object> resp = new LinkedHashMap<>();
-        resp.put("content", sb.toString());
+        resp.put("fileId", fileMeta.getFileId());
+        resp.put("fileName", txtFileName);
+        resp.put("fileSize", fileSize);
         resp.put("bookName", bookName);
         resp.put("author", authorName);
         resp.put("sourceName", sourceName);
@@ -479,6 +510,7 @@ public class ReaderApi {
         resp.put("successCount", successCount);
         resp.put("failCount", failCount);
         resp.put("totalLength", totalLength);
+        resp.put("expireAt", fileMeta.getExpireAt().toString());
         return resp;
     }
 

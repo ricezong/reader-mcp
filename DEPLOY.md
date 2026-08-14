@@ -242,3 +242,26 @@ location /mcp {
     proxy_read_timeout 120s;
 }
 ```
+
+4. 下载文件端点也需要通过 Nginx 代理（可选）：
+
+```nginx
+location /downloads/ {
+    proxy_pass http://127.0.0.1:8081/downloads/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+}
+```
+
+### 下载文件返回的 URL 无法访问
+
+**原因**：`reader.download.base-url` 未配置，自动推断的 URL 不正确（如容器内 IP）。
+
+**解决**：在 `docker-compose.yml` 中配置 `READER_DOWNLOAD_BASE_URL` 环境变量：
+
+```yaml
+environment:
+  - READER_DOWNLOAD_BASE_URL=http://<服务器IP>:8081
+  # 或使用域名
+  # - READER_DOWNLOAD_BASE_URL=https://reader.example.com
+```

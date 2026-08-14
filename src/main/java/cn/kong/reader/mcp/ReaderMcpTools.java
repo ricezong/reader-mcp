@@ -1,5 +1,6 @@
 package cn.kong.reader.mcp;
 
+import cn.kong.reader.service.DownloadFileManager;
 import cn.kong.reader.service.ReaderApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,9 +28,11 @@ public class ReaderMcpTools {
     private static final Logger log = LoggerFactory.getLogger(ReaderMcpTools.class);
 
     private final ReaderApi readerApi;
+    private final DownloadFileManager fileManager;
 
-    public ReaderMcpTools(ReaderApi readerApi) {
+    public ReaderMcpTools(ReaderApi readerApi, DownloadFileManager fileManager) {
         this.readerApi = readerApi;
+        this.fileManager = fileManager;
     }
 
     /** 列出所有书源 */
@@ -135,14 +138,19 @@ public class ReaderMcpTools {
     }
 
     /** 批量下载章节正文 */
-    @Tool(name = "reader_download", description = "批量下载章节正文并返回完整文本内容，包含书名、作者、来源、章节范围及下载统计信息（成功/失败数、总字数），单次上限受服务端配置限制")
+    @Tool(name = "reader_download", description = "批量下载章节正文并暂存为 TXT 文件，返回文件下载 URL（24小时有效）、文件名、下载统计信息（成功/失败数、总字数）。单次上限受服务端配置限制。")
     public Map<String, Object> download(
             @ToolParam(description = "书源 URL") String sourceUrl,
             @ToolParam(description = "书籍 URL") String bookUrl,
             @ToolParam(description = "起始章节序号（从 1 开始）") int start,
             @ToolParam(description = "结束章节序号") int end) {
         try {
-            return readerApi.downloadChapters(sourceUrl, bookUrl, start, end);
+            Map<String, Object> result = readerApi.downloadChapters(sourceUrl, bookUrl, start, end);
+            // 构造下载 URL
+            String fileId = (String) result.get("fileId");
+            String downloadUrl = fileManager.buildDownloadUrl(fileId);
+            result.put("downloadUrl", downloadUrl);
+            return result;
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {

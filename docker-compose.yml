@@ -10,12 +10,24 @@ services:
     restart: unless-stopped
     environment:
       - TZ=Asia/Shanghai
+      # 下载文件存放目录
+      - READER_DOWNLOAD_TEMP_DIR=/app/downloads
+      # 文件过期时间（小时）
+      - READER_DOWNLOAD_EXPIRE_HOURS=24
+      # 服务外部访问基础 URL（部署时改为实际域名/IP）
+      # - READER_DOWNLOAD_BASE_URL=https://reader.example.com
       # 可通过环境变量覆盖配置
       # - READER_MAX_SEARCH_RESULTS=50
       # - READER_MAX_DOWNLOAD_CHAPTERS=200
+    volumes:
+      # 下载文件持久化卷（容器重启后保留未过期的文件）
+      - reader-downloads:/app/downloads
     healthcheck:
       test: ["CMD-SHELL", "curl -sf -X POST http://localhost:8081/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"hc\",\"version\":\"1.0.0\"}}}' || exit 1"]
       interval: 30s
       timeout: 10s
       start_period: 15s
       retries: 3
+
+volumes:
+  reader-downloads:

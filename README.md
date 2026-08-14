@@ -10,7 +10,7 @@
 - **书籍详情** — 作者、简介、封面、字数、分类等
 - **章节目录** — 完整章节列表（序号、标题、URL）
 - **单章正文** — 获取指定章节内容
-- **批量下载** — 并发下载多章正文，支持分批调用
+- **批量下载** — 并发下载多章正文，暂存为 TXT 文件并提供 HTTP 下载链接（24 小时有效）
 - **内置 8 个书源** — 4 个小说源 + 4 个漫画源，开箱即用
 - **运行时导入** — 支持通过 `importSources` 动态导入外部书源
 
@@ -78,7 +78,7 @@ URL: http://localhost:8081/mcp
 | `reader_book_info` | 获取书籍详情 | `sourceUrl`、`bookUrl` |
 | `reader_chapters` | 获取章节目录 | `sourceUrl`、`bookUrl` |
 | `reader_content` | 获取单章正文 | `sourceUrl`、`bookUrl`、`chapterIndex`（从 1 开始） |
-| `reader_download` | 批量下载章节 | `sourceUrl`、`bookUrl`、`start`、`end` |
+| `reader_download` | 批量下载章节并返回下载链接 | `sourceUrl`、`bookUrl`、`start`、`end` |
 
 ### 典型调用流程
 
@@ -133,18 +133,37 @@ spring:
 reader:
   max-search-results: 50              # 单次搜索结果上限
   max-download-chapters: 200          # 单次下载章节数上限
+  download:
+    temp-dir: /tmp/reader-downloads   # 临时文件存放目录
+    expire-hours: 24                   # 文件过期时间（小时）
+    base-url: ""                       # 服务外部访问 URL（部署时配置，如 https://reader.example.com）
 ```
+
+### 下载文件
+
+`reader_download` 工具下载完成后，将内容暂存为 TXT 文件，返回包含 `downloadUrl` 的结果。
+
+- 下载链接格式：`GET /downloads/{fileId}`
+- 文件默认 24 小时后自动过期清理
+- 部署到服务器时，通过 `reader.download.base-url` 配置服务外部访问 URL，确保下载链接可远程访问
 
 ## 架构
 
 ```
 cn.kong.reader/
-├── ReaderApplication.java           # 启动类
+├── ReaderApplication.java           # 启动类（@EnableScheduling）
+├── config/
+│   └── DownloadProperties.java        # 下载文件配置属性
+├── controller/
+│   └── FileDownloadController.java    # 文件下载 HTTP 端点
 ├── mcp/
 │   ├── McpToolConfig.java            # MCP 工具注册配置
 │   └── ReaderMcpTools.java           # 8 个 MCP 工具定义
-└── service/
-    └── ReaderApi.java                # 业务逻辑（搜索/详情/目录/正文/下载）
+├── service/
+│   ├── ReaderApi.java                # 业务逻辑（搜索/详情/目录/正文/下载）
+│   └── DownloadFileManager.java      # 下载文件管理（创建/查询/清理）
+└── task/
+    └── FileCleanupTask.java          # 定时清理过期文件
 ```
 
 ### 技术栈
@@ -162,3 +181,4 @@ cn.kong.reader/
 - **LRU 缓存**：搜索结果（500 条）和章节列表（100 条）使用 `LinkedHashMap` access-order 实现 LRU 淘汰
 - **per-key 锁**：章节缓存使用 double-check + per-key lock 防止缓存击穿
 - **BookSourceManager 单例**：内置 8 个书源（4 小说 + 4 漫画），支持运行时导入外部书源
+- **临时文件管理**：下载内容写入临时文件，定时清理过期文件（默认 24 小时），通过 HTTP 端点提供远程下载

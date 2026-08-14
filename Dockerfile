@@ -37,6 +37,9 @@ COPY --from=builder /build/target/reader-1.0.0.jar app.jar
 
 EXPOSE 8081
 
+# 下载文件存放目录
+VOLUME /app/downloads
+
 # 健康检查：验证 MCP 端点是否响应
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -sf -X POST http://localhost:8081/mcp \

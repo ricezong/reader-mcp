@@ -411,8 +411,8 @@
                 fetch('/api/reader/sources/novel').then(r => r.json()),
                 fetch('/api/reader/sources/comic').then(r => r.json())
             ]);
-            if (!novelResp.error) novelSources = novelResp || [];
-            if (!comicResp.error) comicSources = comicResp || [];
+            novelSources = toArray(novelResp);
+            comicSources = toArray(comicResp);
             renderSourceBar();
         } catch (e) {
             console.error('加载书源列表失败:', e);
@@ -483,15 +483,15 @@
             const data = await resp.json();
 
             if (data.error) {
-                $('results').innerHTML = `<div class="error-msg">${data.error}</div>`;
+                $('results').innerHTML = `<div class="error-msg">${escapeHtml(data.error)}</div>`;
                 return;
             }
 
-            lastResults = data || [];
-            renderResults(data);
-            renderPagination(data, page);
+            lastResults = toArray(data);
+            renderResults(lastResults);
+            renderPagination(lastResults, page);
         } catch (e) {
-            $('results').innerHTML = `<div class="error-msg">请求失败: ${e.message}</div>`;
+            $('results').innerHTML = `<div class="error-msg">请求失败: ${escapeHtml(e.message)}</div>`;
         }
     }
 
@@ -504,22 +504,26 @@
         $('results').innerHTML = results.map((book, i) => {
             const idx = (currentPage - 1) * 10 + i + 1;
             return `
-                <div class="result-card" data-source="${escapeHtml(book.source)}" data-bookurl="${escapeHtml(book.bookUrl)}">
-                    <img src="${book.coverUrl || ''}" onerror="this.style.opacity=0" loading="lazy" />
+                <div class="result-card" data-index="${i}">
+                    <img src="${escapeAttr(book.coverUrl || '')}" onerror="this.style.opacity=0" loading="lazy" />
                     <div class="info">
                         <h3>${idx}. ${escapeHtml(book.name || '未知书名')}</h3>
                         <p>作者：${escapeHtml(book.author || '未知')}</p>
                         <p>字数：${escapeHtml(book.wordCount || '未知')}</p>
                         <p>简介：${escapeHtml(book.intro || '暂无')}</p>
-                        <span class="tag">${escapeHtml(book.sourceName || book.source)}</span>
+                        <span class="tag">${escapeHtml(book.sourceName || book.source || '未知')}</span>
                         <span class="tag">${book.type === 0 ? '小说' : '漫画'}</span>
                     </div>
                 </div>`;
         }).join('');
-        // 绑定点击事件
+        // 绑定点击事件 —— 通过索引从 lastResults 取数据，避免 URL 被属性截断
         document.querySelectorAll('.result-card').forEach(card => {
             card.addEventListener('click', () => {
-                showDetail(card.dataset.source, card.dataset.bookurl);
+                const index = parseInt(card.dataset.index, 10);
+                const book = lastResults[index];
+                if (book) {
+                    showDetail(book.source, book.bookUrl);
+                }
             });
         });
     }
@@ -566,54 +570,68 @@
                 fetch(`/api/reader/book/chapters?source=${encodeURIComponent(source)}&bookUrl=${encodeURIComponent(bookUrl)}`).then(r => r.json())
             ]);
 
-            if (detailResp.error) { $('detailContent').innerHTML = `<div class="error-msg">${detailResp.error}</div>`; return; }
-            if (chaptersResp.error) { chapterList = []; } else { chapterList = chaptersResp || []; }
+            if (detailResp.error) { $('detailContent').innerHTML = `<div class="error-msg">${escapeHtml(detailResp.error)}</div>`; return; }
+            // 关键修复：始终使用处理后的 chapterList（数组），而不是原始的 chaptersResp（可能是错误对象）
+            chapterList = toArray(chaptersResp);
 
-            renderDetail(detailResp, chaptersResp);
+            renderDetail(detailResp, chapterList);
         } catch (e) {
-            $('detailContent').innerHTML = `<div class="error-msg">加载失败: ${e.message}</div>`;
+            $('detailContent').innerHTML = `<div class="error-msg">加载失败: ${escapeHtml(e.message)}</div>`;
         }
     }
 
     function renderDetail(detail, chapters) {
-        const hasChapters = chapters && chapters.length > 0;
+        const safeChapters = toArray(chapters);
+        const hasChapters = safeChapters.length > 0;
         $('detailContent').innerHTML = `
             <div class="book-detail">
-                <img src="${detail.coverUrl || ''}" onerror="this.style.opacity=0" />
+                <img src="${escapeAttr(detail.coverUrl || '')}" onerror="this.style.opacity=0" />
                 <div class="meta">
-                    <h3>${detail.name || '未知'}</h3>
-                    <p>作者：${detail.author || '未知'}</p>
-                    <p>来源：${detail.sourceName || detail.source}</p>
-                    <p>字数：${detail.wordCount || '未知'}</p>
-                    <p>最新章节：${detail.latestChapterTitle || '未知'}</p>
-                    <div class="intro">${detail.intro || '暂无简介'}</div>
+                    <h3>${escapeHtml(detail.name || '未知')}</h3>
+                    <p>作者：${escapeHtml(detail.author || '未知')}</p>
+                    <p>来源：${escapeHtml(detail.sourceName || detail.source || '未知')}</p>
+                    <p>字数：${escapeHtml(detail.wordCount || '未知')}</p>
+                    <p>最新章节：${escapeHtml(detail.latestChapterTitle || '未知')}</p>
+                    <div class="intro">${escapeHtml(detail.intro || '暂无简介')}</div>
                 </div>
             </div>
             <div class="tabs">
-                <button class="active" onclick="switchTab('chapters', this)">章节目录 (${hasChapters ? chapters.length : 0})</button>
+                <button class="active" onclick="switchTab('chapters', this)">章节目录 (${hasChapters ? safeChapters.length : 0})</button>
             </div>
             <div id="tabContent"></div>
         `;
-        renderChapterList(chapters);
+        renderChapterList(safeChapters);
     }
 
     function renderChapterList(chapters) {
         const tabContent = $('tabContent');
-        if (!chapters || chapters.length === 0) {
+        const safeChapters = toArray(chapters);
+        if (safeChapters.length === 0) {
             tabContent.innerHTML = '<div class="empty">暂无章节</div>';
             return;
         }
         tabContent.innerHTML = '<div class="chapter-list">' +
-            chapters.map(ch => `
-                <div class="chapter-item" onclick="showContent('${ch.index + 1}')">
-                    <span>${ch.title || '第' + (ch.index + 1) + '章'}</span>
-                    <span class="chapter-index">${ch.index + 1}</span>
-                </div>`).join('') +
+            safeChapters.map(ch => {
+                const idx = (typeof ch.index === 'number' ? ch.index : parseInt(ch.index, 10)) + 1;
+                const title = ch.title || ('第' + idx + '章');
+                return `
+                <div class="chapter-item" onclick="showContent(${idx})">
+                    <span>${escapeHtml(title)}</span>
+                    <span class="chapter-index">${idx}</span>
+                </div>`;
+            }).join('') +
             '</div>';
     }
 
     // 正文弹窗
     async function showContent(chapterIndex) {
+        // 统一转为整数，避免字符串/数字类型不一致导致的比较错误
+        chapterIndex = parseInt(chapterIndex, 10);
+        if (isNaN(chapterIndex) || chapterIndex < 1) {
+            $('contentArea').innerHTML = '<div class="error-msg">章节序号无效</div>';
+            return;
+        }
+
         $('contentModal').classList.add('active');
         $('contentTitle').textContent = `第 ${chapterIndex} 章`;
         $('contentArea').innerHTML = '<div class="loading"><div class="spinner"></div>加载中...</div>';
@@ -624,15 +642,16 @@
             const resp = await fetch(url);
             const data = await resp.json();
 
-            if (data.error) { $('contentArea').innerHTML = `<div class="error-msg">${data.error}</div>`; return; }
+            if (data.error) { $('contentArea').innerHTML = `<div class="error-msg">${escapeHtml(data.error)}</div>`; return; }
 
             const text = data.content || '';
             const isComic = data.isComic || false;
+            const total = chapterList.length;
 
             let navBar = `<div class="nav-bar">
                 <button onclick="showContent(${chapterIndex - 1})" ${chapterIndex <= 1 ? 'disabled' : ''}>上一章</button>
-                <span>第 ${chapterIndex} 章</span>
-                <button onclick="showContent(${parseInt(chapterIndex) + 1})" ${chapterIndex >= chapterList.length ? 'disabled' : ''}>下一章</button>
+                <span>第 ${chapterIndex} 章${total > 0 ? ' / 共 ' + total + ' 章' : ''}</span>
+                <button onclick="showContent(${chapterIndex + 1})" ${total > 0 && chapterIndex >= total ? 'disabled' : ''}>下一章</button>
             </div>`;
 
             let contentHtml;
@@ -645,7 +664,7 @@
             $('contentArea').innerHTML = navBar + contentHtml;
             $('contentModal').scrollTop = 0;
         } catch (e) {
-            $('contentArea').innerHTML = `<div class="error-msg">加载失败: ${e.message}</div>`;
+            $('contentArea').innerHTML = `<div class="error-msg">加载失败: ${escapeHtml(e.message)}</div>`;
         }
     }
 
@@ -669,9 +688,29 @@
 
     // 工具函数
     function escapeHtml(s) {
+        if (s == null) return '';
         const d = document.createElement('div');
-        d.textContent = s;
+        d.textContent = String(s);
         return d.innerHTML;
+    }
+
+    /** 转义属性值（额外转义引号，防止属性截断） */
+    function escapeAttr(s) {
+        if (s == null) return '';
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    /** 安全获取数组：确保返回值始终是数组 */
+    function toArray(data) {
+        if (Array.isArray(data)) return data;
+        if (data && data.error) return [];
+        if (data == null) return [];
+        return [];
     }
 
     // ---------- 初始化 ----------

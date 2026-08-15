@@ -153,7 +153,7 @@ curl -s -X POST http://localhost:8081/mcp \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
 ```
 
-预期返回 8 个工具：`reader_list_sources`、`reader_search`、`reader_search_comic`、`reader_search_by_author`、`reader_book_info`、`reader_chapters`、`reader_content`、`reader_download`。
+预期返回 9 个工具：`list_sources`、`search_novel`、`search_comic`、`search_novel_by_author`、`search_comic_by_author`、`book_info`、`chapters`、`content`、`download`。
 
 ---
 

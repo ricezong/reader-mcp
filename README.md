@@ -66,23 +66,24 @@ URL: http://localhost:8081/mcp
 
 ## MCP 工具
 
-服务注册了 8 个 MCP 工具，客户端通过 `tools/list` 自动发现：
+服务注册了 9 个 MCP 工具，客户端通过 `tools/list` 自动发现：
 
 | 工具 | 说明 | 关键参数 |
 |------|------|----------|
-| `reader_list_sources` | 列出书源（可按类型筛选） | `type`（可选：`novel`=仅小说源，`comic`=仅漫画源，空=全部） |
-| `reader_search` | 按关键词搜索小说 | `keyword`（必填）、`source`（可选，书源简称，传入则只搜该源，不传聚合所有小说源） |
-| `reader_search_comic` | 按关键词搜索漫画 | `keyword`（必填）、`source`（可选，书源简称，传入则只搜该源，不传聚合所有漫画源） |
-| `reader_search_by_author` | 按作者搜索小说 | `author`（必填），聚合所有小说源 |
-| `reader_book_info` | 获取书籍详情 | `source`（书源简称，从搜索结果获取）、`bookUrl` |
-| `reader_chapters` | 获取章节目录 | `source`（书源简称）、`bookUrl` |
-| `reader_content` | 获取单章正文 | `source`（书源简称）、`bookUrl`、`chapterIndex`（从 1 开始） |
-| `reader_download` | 批量下载章节并返回下载链接 | `source`（书源简称）、`bookUrl`、`start`、`end` |
+| `list_sources` | 列出书源（可按类型筛选） | `type`（可选：`novel`=仅小说源，`comic`=仅漫画源，空=全部） |
+| `search_novel` | 按关键词搜索小说 | `keyword`（必填）、`source`（可选，书源简称）、`page`（可选，默认 1） |
+| `search_comic` | 按关键词搜索漫画 | `keyword`（必填）、`source`（可选，书源简称）、`page`（可选，默认 1） |
+| `search_novel_by_author` | 按作者搜索小说 | `author`（必填），聚合所有小说源 |
+| `search_comic_by_author` | 按作者搜索漫画 | `author`（必填），聚合所有漫画源 |
+| `book_info` | 获取书籍详情 | `source`（书源简称，从搜索结果获取）、`bookUrl` |
+| `chapters` | 获取章节目录 | `source`（书源简称）、`bookUrl` |
+| `content` | 获取单章正文 | `source`（书源简称）、`bookUrl`、`chapterIndex`（从 1 开始） |
+| `download` | 批量下载章节并返回下载链接 | `source`（书源简称）、`bookUrl`、`start`、`end` |
 
 ### 典型调用流程
 
 ```
-reader_list_sources → reader_search / reader_search_comic → reader_book_info → reader_chapters → reader_content / reader_download
+list_sources → search_novel / search_comic → book_info → chapters → content / download
 ```
 
 ## 内置书源
@@ -141,7 +142,7 @@ reader:
 
 ### 下载文件
 
-`reader_download` 工具下载完成后，将内容暂存为 TXT 文件，返回包含 `downloadUrl` 的结果。
+`download` 工具下载完成后，将内容暂存为 TXT 文件，返回包含 `downloadUrl` 的结果。
 
 - 下载链接格式：`GET /api/reader/download/{fileId}`
 - 文件默认 24 小时后自动过期清理
@@ -153,6 +154,8 @@ reader:
 cn.kong.reader/
 ├── ReaderApplication.java           # 启动类（@EnableScheduling）
 ├── config/
+│   ├── EngineConfig.java             # 引擎配置（ReaderService Bean 注册）
+│   ├── GlobalExceptionHandler.java    # 全局异常处理（统一 HTTP 状态码）
 │   ├── TempFileProperties.java       # 临时文件配置属性
 │   └── WebConfig.java                # Web 配置（根路径转发到 index.html）
 ├── controller/

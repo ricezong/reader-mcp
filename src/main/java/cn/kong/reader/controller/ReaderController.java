@@ -23,6 +23,7 @@ import java.util.Map;
 /**
  * Web 控制器：为前端页面提供搜索、详情、目录、正文、文件下载的 REST API。
  * <p>所有接口统一前缀 /api/reader。
+ * <p>异常处理统一由 {@link GlobalExceptionHandler} 处理，此处不再声明。
  */
 @RestController
 @RequestMapping("/api/reader")
@@ -92,6 +93,28 @@ public class ReaderController {
             return readerApi.searchBySource(keyword, source, page);
         }
         return readerApi.searchComic(keyword, page);
+    }
+
+    /**
+     * 按作者搜索小说（聚合所有小说源）。
+     *
+     * @param author 作者名
+     * @return 搜索结果列表
+     */
+    @GetMapping("/search/novel/by-author")
+    public List<SearchResult> searchNovelByAuthor(@RequestParam String author) {
+        return readerApi.searchNovelByAuthor(author);
+    }
+
+    /**
+     * 按作者搜索漫画（聚合所有漫画源）。
+     *
+     * @param author 作者名
+     * @return 搜索结果列表
+     */
+    @GetMapping("/search/comic/by-author")
+    public List<SearchResult> searchComicByAuthor(@RequestParam String author) {
+        return readerApi.searchComicByAuthor(author);
     }
 
     /**
@@ -179,20 +202,4 @@ public class ReaderController {
                 .body(resource);
     }
 
-    /** 统一异常处理 */
-    @ExceptionHandler(IllegalArgumentException.class)
-    public Map<String, Object> handleIllegalArgument(IllegalArgumentException e) {
-        log.warn("参数校验失败: {}", e.getMessage());
-        Map<String, Object> result = new HashMap<>();
-        result.put("error", e.getMessage());
-        return result;
-    }
-
-    @ExceptionHandler(Exception.class)
-    public Map<String, Object> handleException(Exception e) {
-        log.error("接口调用失败", e);
-        Map<String, Object> result = new HashMap<>();
-        result.put("error", "服务内部错误: " + e.getMessage());
-        return result;
-    }
 }

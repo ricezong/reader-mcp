@@ -480,13 +480,19 @@
                 url += `&source=${encodeURIComponent(currentSource)}`;
             }
             const resp = await fetch(url);
-            const data = await resp.json();
 
-            if (data.error) {
-                $('results').innerHTML = `<div class="error-msg">${escapeHtml(data.error)}</div>`;
+            // 非 2xx 响应统一走错误处理
+            if (!resp.ok) {
+                let errMsg = `请求失败 (${resp.status})`;
+                try {
+                    const errData = await resp.json();
+                    if (errData.error) errMsg = errData.error;
+                } catch (_) {}
+                $('results').innerHTML = `<div class="error-msg">${escapeHtml(errMsg)}</div>`;
                 return;
             }
 
+            const data = await resp.json();
             lastResults = toArray(data);
             renderResults(lastResults);
             renderPagination(lastResults, page);
@@ -534,8 +540,9 @@
             pagination.style.display = 'flex';
             $('pageInfo').textContent = `第 ${page} 页`;
             $('prevBtn').disabled = page <= 1;
-            // 如果返回了满页结果（10 条），可能有下一页
-            $('nextBtn').disabled = results.length < 10;
+            // 搜索结果可能来自多个源，每页数量不固定
+            // 有结果时允许翻下一页，直到返回空列表为止
+            $('nextBtn').disabled = false;
         } else {
             pagination.style.display = 'none';
         }
@@ -566,15 +573,23 @@
 
         try {
             const [detailResp, chaptersResp] = await Promise.all([
-                fetch(`/api/reader/book/info?source=${encodeURIComponent(source)}&bookUrl=${encodeURIComponent(bookUrl)}`).then(r => r.json()),
-                fetch(`/api/reader/book/chapters?source=${encodeURIComponent(source)}&bookUrl=${encodeURIComponent(bookUrl)}`).then(r => r.json())
+                fetch(`/api/reader/book/info?source=${encodeURIComponent(source)}&bookUrl=${encodeURIComponent(bookUrl)}`),
+                fetch(`/api/reader/book/chapters?source=${encodeURIComponent(source)}&bookUrl=${encodeURIComponent(bookUrl)}`)
             ]);
 
-            if (detailResp.error) { $('detailContent').innerHTML = `<div class="error-msg">${escapeHtml(detailResp.error)}</div>`; return; }
-            // 关键修复：始终使用处理后的 chapterList（数组），而不是原始的 chaptersResp（可能是错误对象）
-            chapterList = toArray(chaptersResp);
+            // 详情页检查错误状态
+            if (!detailResp.ok) {
+                let errMsg = `加载失败 (${detailResp.status})`;
+                try { const e = await detailResp.json(); if (e.error) errMsg = e.error; } catch (_) {}
+                $('detailContent').innerHTML = `<div class="error-msg">${escapeHtml(errMsg)}</div>`;
+                return;
+            }
+            const detail = await detailResp.json();
+            // 章节列表即使出错也安全降级为空数组
+            const chaptersData = chaptersResp.ok ? await chaptersResp.json() : [];
+            chapterList = toArray(chaptersData);
 
-            renderDetail(detailResp, chapterList);
+            renderDetail(detail, chapterList);
         } catch (e) {
             $('detailContent').innerHTML = `<div class="error-msg">加载失败: ${escapeHtml(e.message)}</div>`;
         }
@@ -640,10 +655,15 @@
         try {
             const url = `/api/reader/book/content?source=${encodeURIComponent(detailSource)}&bookUrl=${encodeURIComponent(detailBookUrl)}&chapterIndex=${chapterIndex}`;
             const resp = await fetch(url);
+
+            if (!resp.ok) {
+                let errMsg = `加载失败 (${resp.status})`;
+                try { const e = await resp.json(); if (e.error) errMsg = e.error; } catch (_) {}
+                $('contentArea').innerHTML = `<div class="error-msg">${escapeHtml(errMsg)}</div>`;
+                return;
+            }
+
             const data = await resp.json();
-
-            if (data.error) { $('contentArea').innerHTML = `<div class="error-msg">${escapeHtml(data.error)}</div>`; return; }
-
             const text = data.content || '';
             const isComic = data.isComic || false;
             const total = chapterList.length;

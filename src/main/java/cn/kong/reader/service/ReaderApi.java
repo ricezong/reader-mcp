@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 
@@ -29,7 +30,7 @@ public class ReaderApi {
     /** 搜索关键词最大长度 */
     private static final int MAX_KEYWORD_LENGTH = 100;
 
-    private final ReaderService service = ReaderService.getInstance();
+    private final ReaderService service;
 
     private final TempFileService fileService;
 
@@ -39,8 +40,9 @@ public class ReaderApi {
     @Value("${reader.max-download-chapters:200}")
     private int maxDownloadChapters;
 
-    public ReaderApi(TempFileService fileService) {
+    public ReaderApi(TempFileService fileService, ReaderService readerService) {
         this.fileService = fileService;
+        this.service = readerService;
     }
 
     // ---------- 源管理 ----------
@@ -153,6 +155,17 @@ public class ReaderApi {
         return limitResults(service.searchNovelByAuthor(author));
     }
 
+    /**
+     * 按作者搜索漫画（聚合所有漫画源，引擎自动过滤匹配作者的结果）。
+     *
+     * @param author 作者名
+     * @return 匹配该作者的作品列表，每条结果包含 source 字段供后续操作使用
+     */
+    public List<SearchResult> searchComicByAuthor(String author) {
+        validateKeyword(author, "作者名");
+        return limitResults(service.searchComicByAuthor(author));
+    }
+
     // ---------- 详情 ----------
 
     /**
@@ -213,6 +226,7 @@ public class ReaderApi {
      */
     public DownloadResult downloadChapters(String source, String bookUrl, int start, int end) {
         if (start < 1) throw new IllegalArgumentException("起始章节不能小于 1");
+        if (end < 1) throw new IllegalArgumentException("结束章节不能小于 1");
         if (start > end) throw new IllegalArgumentException("起始章节不能大于结束章节");
 
         // 获取详情和目录
@@ -270,16 +284,17 @@ public class ReaderApi {
         // 写入临时文件
         String txtFileName = bookName + "_" + start + "-" + to + ".txt";
         TempFileService.FileMeta fileMeta;
+        long fileSize;
         try {
             fileMeta = fileService.createFile(txtFileName);
-            Files.write(Paths.get(fileMeta.getFilePath()),
-                    sb.toString().getBytes(StandardCharsets.UTF_8));
+            Path filePath = Paths.get(fileMeta.getFilePath());
+            Files.write(filePath, sb.toString().getBytes(StandardCharsets.UTF_8));
+            // 使用实际文件大小（字节数），而非字符数
+            fileSize = Files.size(filePath);
         } catch (IOException e) {
             log.error("写入下载文件失败: fileName={}", txtFileName, e);
             throw new RuntimeException("写入下载文件失败: " + e.getMessage());
         }
-
-        long fileSize = sb.length();
 
         DownloadResult result = new DownloadResult(
                 fileMeta.getFileId(),

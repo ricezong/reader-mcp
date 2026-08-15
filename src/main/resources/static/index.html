@@ -2,55 +2,107 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="theme-color" content="#4f46e5">
     <title>小说/漫画搜索器</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, "Microsoft YaHei", sans-serif; background: #f5f5f5; color: #333; }
-        .container { max-width: 900px; margin: 0 auto; padding: 16px; }
+
+        :root {
+            --primary: #4f46e5;
+            --primary-light: #c3b8ff;
+            --bg: #f5f5f5;
+            --card-bg: #fff;
+            --text: #333;
+            --text-secondary: #666;
+            --text-muted: #999;
+            --border: #e0e0e0;
+            --border-light: #f0f0f0;
+            --radius: 12px;
+            --shadow-sm: 0 1px 4px rgba(0,0,0,0.06);
+        }
+
+        html { font-size: 16px; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", "Helvetica Neue", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            -webkit-text-size-adjust: 100%;
+            -webkit-tap-highlight-color: transparent;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 16px;
+        }
 
         /* 顶部搜索栏 */
         .search-bar {
             position: sticky; top: 0; z-index: 100;
-            background: #fff; padding: 16px; border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 16px;
+            background: var(--card-bg);
+            padding: 16px;
+            border-radius: var(--radius);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            margin-bottom: 16px;
             display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
         }
-        .search-bar input[type="text"] {
-            flex: 1; min-width: 200px; padding: 10px 14px;
-            border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px;
-            transition: border-color 0.2s;
-        }
-        .search-bar input[type="text"]:focus { border-color: #4f46e5; outline: none; }
+
         .search-bar select {
-            padding: 10px 30px 10px 14px; border: 2px solid #e0e0e0; border-radius: 8px;
+            padding: 10px 30px 10px 14px;
+            border: 2px solid var(--border); border-radius: 8px;
             font-size: 15px; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 8px center;
-            appearance: none; -webkit-appearance: none; -moz-appearance: none; cursor: pointer;
+            appearance: none; -webkit-appearance: none; -moz-appearance: none;
+            cursor: pointer; min-height: 44px;
         }
+
+        .search-bar input[type="text"] {
+            flex: 1; min-width: 0;
+            padding: 10px 14px;
+            border: 2px solid var(--border); border-radius: 8px;
+            font-size: 16px; /* 16px 防止 iOS 自动放大 */
+            transition: border-color 0.2s;
+            min-height: 44px;
+        }
+        .search-bar input[type="text"]:focus { border-color: var(--primary); outline: none; }
+
         .search-bar button {
-            padding: 10px 24px; border: none; border-radius: 8px;
-            font-size: 15px; cursor: pointer; font-weight: 600; transition: opacity 0.2s;
+            padding: 10px 24px;
+            border: none; border-radius: 8px;
+            font-size: 15px; cursor: pointer; font-weight: 600;
+            transition: opacity 0.2s, transform 0.1s;
+            min-height: 44px;
+            -webkit-appearance: none; appearance: none;
         }
         .search-bar button:hover { opacity: 0.85; }
-        .btn-primary { background: #4f46e5; color: #fff; }
+        .search-bar button:active { transform: scale(0.97); }
+        .btn-primary { background: var(--primary); color: #fff; }
 
         /* 书源选择栏 */
         .source-bar {
-            background: #fff; padding: 12px 16px; border-radius: 12px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 16px;
+            background: var(--card-bg);
+            padding: 12px 16px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 16px;
             display: none; flex-wrap: wrap; gap: 8px; align-items: center;
         }
         .source-bar.active { display: flex; }
         .source-bar .source-label {
-            font-size: 14px; color: #999; margin-right: 4px; flex-shrink: 0;
+            font-size: 14px; color: var(--text-muted); margin-right: 4px; flex-shrink: 0;
         }
         .source-chip {
-            padding: 6px 14px; border: 2px solid #e0e0e0; border-radius: 20px;
-            font-size: 13px; cursor: pointer; transition: all 0.2s; background: #fff;
-            color: #666; user-select: none;
+            padding: 6px 14px;
+            border: 2px solid var(--border); border-radius: 20px;
+            font-size: 13px; cursor: pointer; transition: all 0.2s;
+            background: #fff; color: var(--text-secondary);
+            user-select: none; -webkit-user-select: none;
         }
-        .source-chip:hover { border-color: #c3b8ff; color: #4f46e5; }
-        .source-chip.active { background: #4f46e5; color: #fff; border-color: #4f46e5; }
+        .source-chip:hover { border-color: var(--primary-light); color: var(--primary); }
+        .source-chip.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
         /* 翻页栏 */
         .pagination {
@@ -58,28 +110,45 @@
             gap: 12px; margin: 16px 0;
         }
         .pagination button {
-            padding: 8px 20px; border: 1px solid #ddd; border-radius: 8px;
-            background: #fff; cursor: pointer; font-size: 14px; transition: all 0.2s;
+            padding: 8px 20px;
+            border: 1px solid #ddd; border-radius: 8px;
+            background: #fff; cursor: pointer; font-size: 14px;
+            transition: all 0.2s;
+            min-height: 40px;
         }
-        .pagination button:hover:not(:disabled) { background: #4f46e5; color: #fff; border-color: #4f46e5; }
+        .pagination button:hover:not(:disabled) { background: var(--primary); color: #fff; border-color: var(--primary); }
         .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
-        .pagination span { font-size: 14px; color: #666; }
+        .pagination span { font-size: 14px; color: var(--text-secondary); }
 
         /* 搜索结果卡片 */
         .result-card {
-            background: #fff; border-radius: 12px; padding: 16px;
-            margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-            display: flex; gap: 14px; cursor: pointer; transition: box-shadow 0.2s;
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: var(--shadow-sm);
+            display: flex; gap: 14px;
+            cursor: pointer; transition: box-shadow 0.2s, transform 0.1s;
         }
         .result-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+        .result-card:active { transform: scale(0.99); }
         .result-card img {
             width: 64px; height: 84px; object-fit: cover; border-radius: 6px;
             flex-shrink: 0; background: #eee;
         }
         .result-card .info { flex: 1; min-width: 0; }
-        .result-card .info h3 { font-size: 16px; margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .result-card .info p { font-size: 13px; color: #666; margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .result-card .info .tag { display: inline-block; background: #f0f0ff; color: #4f46e5; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 6px; }
+        .result-card .info h3 {
+            font-size: 16px; margin-bottom: 6px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .result-card .info p {
+            font-size: 13px; color: var(--text-secondary); margin-bottom: 3px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .result-card .info .tag {
+            display: inline-block; background: #f0f0ff; color: var(--primary);
+            padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 6px;
+        }
 
         /* 弹窗 */
         .modal-overlay {
@@ -90,30 +159,37 @@
         }
         .modal-overlay.active { display: flex; }
         .modal {
-            background: #fff; border-radius: 16px; max-width: 700px; width: 100%;
+            background: #fff; border-radius: 16px;
+            max-width: 700px; width: 100%;
             padding: 24px; position: relative;
         }
         .modal .close-btn {
-            position: absolute; top: 16px; right: 20px; font-size: 24px;
-            cursor: pointer; color: #999; border: none; background: none;
+            position: absolute; top: 16px; right: 20px;
+            font-size: 24px; cursor: pointer; color: #999;
+            border: none; background: none;
+            width: 36px; height: 36px;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 10;
         }
         .modal h2 { margin-bottom: 16px; font-size: 20px; }
 
         /* 详情弹窗内容 */
         .book-detail { display: flex; gap: 16px; margin-bottom: 16px; }
         .book-detail img { width: 100px; height: 140px; object-fit: cover; border-radius: 8px; flex-shrink: 0; background: #eee; }
-        .book-detail .meta { flex: 1; }
+        .book-detail .meta { flex: 1; min-width: 0; }
         .book-detail .meta h3 { font-size: 18px; margin-bottom: 8px; }
-        .book-detail .meta p { font-size: 13px; color: #666; margin-bottom: 4px; }
+        .book-detail .meta p { font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }
         .book-detail .intro { margin-top: 8px; font-size: 13px; color: #555; line-height: 1.6; max-height: 100px; overflow-y: auto; }
 
         /* Tab 切换 */
-        .tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 2px solid #f0f0f0; }
+        .tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 2px solid var(--border-light); }
         .tabs button {
             padding: 8px 20px; border: none; background: none; cursor: pointer;
-            font-size: 14px; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;
+            font-size: 14px; color: var(--text-secondary);
+            border-bottom: 2px solid transparent; margin-bottom: -2px;
+            white-space: nowrap;
         }
-        .tabs button.active { color: #4f46e5; border-bottom-color: #4f46e5; font-weight: 600; }
+        .tabs button.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
 
         /* 章节列表 */
         .chapter-list { max-height: 400px; overflow-y: auto; }
@@ -123,30 +199,132 @@
             display: flex; justify-content: space-between; align-items: center;
         }
         .chapter-item:hover { background: #f9f9ff; }
-        .chapter-item .chapter-index { color: #999; font-size: 12px; flex-shrink: 0; }
+        .chapter-item:active { background: #eee; }
+        .chapter-item .chapter-index { color: var(--text-muted); font-size: 12px; flex-shrink: 0; }
 
         /* 正文显示 */
         .content-view { max-height: 500px; overflow-y: auto; padding: 8px; }
-        .content-view .nav-bar { display: flex; justify-content: space-between; margin-bottom: 12px; }
+        .content-view .nav-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
         .content-view .nav-bar button {
-            padding: 6px 16px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; font-size: 13px;
+            padding: 6px 16px; border: 1px solid #ddd; border-radius: 6px;
+            background: #fff; cursor: pointer; font-size: 13px;
+            min-height: 36px; flex-shrink: 0;
         }
-        .content-view .nav-bar button:hover:not(:disabled) { background: #4f46e5; color: #fff; border-color: #4f46e5; }
+        .content-view .nav-bar button:hover:not(:disabled) { background: var(--primary); color: #fff; border-color: var(--primary); }
         .content-view .nav-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .content-view .nav-bar span { font-size: 13px; color: var(--text-muted); text-align: center; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .content-view .text-content { font-size: 15px; line-height: 1.8; white-space: pre-wrap; word-break: break-all; }
         .content-view .comic-content img { max-width: 100%; display: block; margin: 8px auto; }
 
         /* 加载中 */
-        .loading { text-align: center; padding: 40px; color: #999; font-size: 15px; }
+        .loading { text-align: center; padding: 40px; color: var(--text-muted); font-size: 15px; }
         .loading .spinner {
-            border: 3px solid #f0f0f0; border-top: 3px solid #4f46e5;
+            border: 3px solid var(--border-light); border-top: 3px solid var(--primary);
             border-radius: 50%; width: 36px; height: 36px;
             animation: spin 0.8s linear infinite; margin: 0 auto 12px;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        .empty { text-align: center; padding: 40px; color: #999; }
+        .empty { text-align: center; padding: 40px; color: var(--text-muted); }
         .error-msg { text-align: center; padding: 20px; color: #e53e3e; font-size: 14px; }
+
+        /* ==================== 响应式适配 ==================== */
+
+        /* 平板（<=768px） */
+        @media (max-width: 768px) {
+            .container { padding: 12px; }
+
+            /* 搜索栏改为纵向排列 */
+            .search-bar {
+                flex-direction: column;
+                gap: 10px;
+                padding: 12px;
+            }
+            .search-bar select,
+            .search-bar input[type="text"],
+            .search-bar button {
+                width: 100%;
+                min-width: 0;
+            }
+
+            /* 弹窗全屏化 */
+            .modal-overlay {
+                padding: 0;
+                align-items: stretch;
+            }
+            .modal {
+                max-width: 100%;
+                width: 100%;
+                min-height: 100vh;
+                border-radius: 0;
+                padding: 16px;
+                padding-top: 52px;
+            }
+            .modal .close-btn {
+                top: 12px; right: 12px;
+                width: 36px; height: 36px;
+                font-size: 22px;
+            }
+            .modal h2 { font-size: 18px; }
+
+            /* 详情区布局优化 */
+            .book-detail img { width: 80px; height: 112px; }
+
+            /* 正文内容区高度自适应 */
+            .content-view { max-height: none; min-height: 50vh; }
+            .chapter-list { max-height: 50vh; }
+
+            /* 正文导航栏更紧凑 */
+            .content-view .nav-bar button { padding: 8px 14px; font-size: 14px; }
+        }
+
+        /* 手机（<=480px） */
+        @media (max-width: 480px) {
+            html { font-size: 15px; }
+
+            .container { padding: 8px; }
+
+            /* 结果卡片更紧凑 */
+            .result-card {
+                padding: 12px;
+                gap: 10px;
+                margin-bottom: 8px;
+            }
+            .result-card img { width: 48px; height: 64px; }
+            .result-card .info h3 { font-size: 15px; margin-bottom: 4px; }
+            .result-card .info p { font-size: 12px; margin-bottom: 2px; }
+            .result-card .info .tag { font-size: 11px; padding: 1px 6px; }
+
+            /* 书源选择栏更紧凑 */
+            .source-bar { padding: 8px 12px; gap: 6px; }
+            .source-chip { padding: 5px 10px; font-size: 12px; }
+
+            /* 详情区进一步紧凑 */
+            .book-detail { gap: 10px; }
+            .book-detail img { width: 64px; height: 90px; }
+            .book-detail .meta h3 { font-size: 16px; }
+            .book-detail .meta p { font-size: 12px; }
+            .book-detail .intro { font-size: 12px; max-height: 80px; }
+
+            /* 章节列表项更紧凑 */
+            .chapter-item { padding: 8px 10px; font-size: 13px; }
+
+            /* 正文文字适配 */
+            .content-view .text-content { font-size: 14px; line-height: 1.75; }
+            .content-view .nav-bar span { font-size: 12px; }
+
+            /* 翻页按钮更紧凑 */
+            .pagination { gap: 8px; }
+            .pagination button { padding: 6px 16px; }
+
+            /* 弹窗内边距缩小 */
+            .modal { padding: 12px; padding-top: 48px; }
+        }
+
+        /* 超大屏（>=1200px）：限制最大宽度，居中显示 */
+        @media (min-width: 1200px) {
+            .container { max-width: 1000px; }
+        }
     </style>
 </head>
 <body>
@@ -182,7 +360,7 @@
 <!-- 详情弹窗 -->
 <div class="modal-overlay" id="detailModal">
     <div class="modal">
-        <button class="close-btn" onclick="closeModal()">&times;</button>
+        <button class="close-btn" onclick="closeModal()" aria-label="关闭">&times;</button>
         <h2>书籍详情</h2>
         <div id="detailContent">
             <div class="loading"><div class="spinner"></div>加载中...</div>
@@ -193,7 +371,7 @@
 <!-- 正文弹窗 -->
 <div class="modal-overlay" id="contentModal">
     <div class="modal">
-        <button class="close-btn" onclick="closeContentModal()">&times;</button>
+        <button class="close-btn" onclick="closeContentModal()" aria-label="关闭">&times;</button>
         <h2 id="contentTitle">正文</h2>
         <div class="content-view" id="contentArea"></div>
     </div>
@@ -327,7 +505,7 @@
             const idx = (currentPage - 1) * 10 + i + 1;
             return `
                 <div class="result-card" data-source="${escapeHtml(book.source)}" data-bookurl="${escapeHtml(book.bookUrl)}">
-                    <img src="${book.coverUrl || ''}" onerror="this.style.opacity=0" />
+                    <img src="${book.coverUrl || ''}" onerror="this.style.opacity=0" loading="lazy" />
                     <div class="info">
                         <h3>${idx}. ${escapeHtml(book.name || '未知书名')}</h3>
                         <p>作者：${escapeHtml(book.author || '未知')}</p>
@@ -380,6 +558,7 @@
 
         $('detailModal').classList.add('active');
         $('detailContent').innerHTML = '<div class="loading"><div class="spinner"></div>加载中...</div>';
+        document.body.style.overflow = 'hidden';
 
         try {
             const [detailResp, chaptersResp] = await Promise.all([
@@ -438,6 +617,7 @@
         $('contentModal').classList.add('active');
         $('contentTitle').textContent = `第 ${chapterIndex} 章`;
         $('contentArea').innerHTML = '<div class="loading"><div class="spinner"></div>加载中...</div>';
+        document.body.style.overflow = 'hidden';
 
         try {
             const url = `/api/reader/book/content?source=${encodeURIComponent(detailSource)}&bookUrl=${encodeURIComponent(detailBookUrl)}&chapterIndex=${chapterIndex}`;
@@ -451,7 +631,7 @@
 
             let navBar = `<div class="nav-bar">
                 <button onclick="showContent(${chapterIndex - 1})" ${chapterIndex <= 1 ? 'disabled' : ''}>上一章</button>
-                <span style="font-size:13px;color:#999;">第 ${chapterIndex} 章</span>
+                <span>第 ${chapterIndex} 章</span>
                 <button onclick="showContent(${parseInt(chapterIndex) + 1})" ${chapterIndex >= chapterList.length ? 'disabled' : ''}>下一章</button>
             </div>`;
 
@@ -469,8 +649,14 @@
         }
     }
 
-    function closeModal() { $('detailModal').classList.remove('active'); }
-    function closeContentModal() { $('contentModal').classList.remove('active'); }
+    function closeModal() {
+        $('detailModal').classList.remove('active');
+        document.body.style.overflow = '';
+    }
+    function closeContentModal() {
+        $('contentModal').classList.remove('active');
+        document.body.style.overflow = '';
+    }
 
     // 点击遮罩关闭
     $('detailModal').addEventListener('click', e => { if (e.target.id === 'detailModal') closeModal(); });

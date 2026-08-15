@@ -4,20 +4,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 /**
- * 下载文件相关配置。
- *
- * <p>配置前缀 {@code reader.download}，在 application.yml 中配置。
- *
- * <ul>
- *   <li>{@code temp-dir} — 临时文件存放目录，默认系统临时目录下的 {@code reader-downloads}</li>
- *   <li>{@code expire-hours} — 文件过期时间（小时），默认 24 小时后自动清理</li>
- *   <li>{@code base-url} — 服务外部访问基础 URL，用于拼接下载链接；
- *       未配置时自动从请求头推断（部署到服务器时建议显式配置）</li>
- * </ul>
+ * 临时文件相关配置（配置前缀 reader.download）。
  */
 @Component
 @ConfigurationProperties(prefix = "reader.download")
-public class DownloadProperties {
+public class TempFileProperties {
 
     /** 临时文件存放目录 */
     private String tempDir = System.getProperty("java.io.tmpdir") + "reader-downloads";

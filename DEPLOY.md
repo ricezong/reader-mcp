@@ -39,10 +39,19 @@ reader-mcp/
 ├── docker-compose.yml
 ├── .dockerignore
 ├── pom.xml
+├── maven-settings.xml               # Maven 阿里云镜像加速配置
 ├── libs/
 │   └── reader-engine-1.0.0.jar    # 本地依赖（构建时安装到 Maven 仓库）
 ├── src/                             # 源代码
-└── README.md
+│   └── main/
+│       ├── java/cn/kong/reader/   #   Java 源码
+│       └── resources/
+│           ├── application.yml     #   应用配置
+│           └── static/index.html   #   Web 搜索页面
+├── README.md
+├── SKILL.md                         # CatPaw Skill 文件
+├── Engine.md                        # reader-engine 引擎文档
+└── DEPLOY.md                        # 本部署指南
 ```
 
 > **重要**：`libs/reader-engine-1.0.0.jar` 必须存在，否则 Docker 构建会失败。
@@ -200,6 +209,10 @@ http://<服务器IP>:8081/mcp
 
 在 Settings → MCP 中添加 Streamable-HTTP 服务，URL 填 `http://<服务器IP>:8081/mcp`。
 
+### CatPaw
+
+在 MCP 服务配置中添加 `http://<服务器IP>:8081/mcp`，同时可配合 [reader-downloader Skill](./SKILL.md) 获得更好的工具编排指导。
+
 ---
 
 ## 常见问题
@@ -246,8 +259,8 @@ location /mcp {
 4. 下载文件端点也需要通过 Nginx 代理（可选）：
 
 ```nginx
-location /downloads/ {
-    proxy_pass http://127.0.0.1:8081/downloads/;
+location /api/reader/download/ {
+    proxy_pass http://127.0.0.1:8081/api/reader/download/;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
 }

@@ -1,13 +1,10 @@
 package cn.kong.reader.service;
 
-import cn.kong.reader.config.DownloadProperties;
+import cn.kong.reader.config.TempFileProperties;
 import jakarta.annotation.PostConstruct;
-import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.io.IOException;
 import java.nio.file.*;
@@ -16,23 +13,19 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 下载文件管理器：负责临时文件的创建、查询和过期清理。
- *
- * <p>文件存储在 {@link DownloadProperties#getTempDir()} 指定的目录下，
- * 每个文件分配一个唯一 fileId，通过 {@code /downloads/{fileId}} 端点提供下载。
- * 文件创建时记录时间戳，超过 {@link DownloadProperties#getExpireHours()} 小时后自动清理。
+ * 临时文件管理服务：负责下载文件的创建、查询、过期清理和下载 URL 拼接。
  */
 @Service
-public class DownloadFileManager {
+public class TempFileService {
 
-    private static final Logger log = LoggerFactory.getLogger(DownloadFileManager.class);
+    private static final Logger log = LoggerFactory.getLogger(TempFileService.class);
 
-    private final DownloadProperties properties;
+    private final TempFileProperties properties;
 
     /** 文件元数据：fileId → FileMeta */
     private final ConcurrentHashMap<String, FileMeta> fileMap = new ConcurrentHashMap<>();
 
-    public DownloadFileManager(DownloadProperties properties) {
+    public TempFileService(TempFileProperties properties) {
         this.properties = properties;
     }
 
@@ -42,8 +35,6 @@ public class DownloadFileManager {
             Path dir = Paths.get(properties.getTempDir());
             Files.createDirectories(dir);
             log.info("下载临时目录初始化: {}", dir.toAbsolutePath());
-
-            // 启动时清理上次残留的文件
             cleanExpiredFiles();
         } catch (IOException e) {
             log.error("创建临时目录失败: {}", properties.getTempDir(), e);
@@ -60,8 +51,6 @@ public class DownloadFileManager {
      */
     public FileMeta createFile(String fileName) throws IOException {
         String fileId = UUID.randomUUID().toString().replace("-", "");
-
-        // 构造安全文件名：fileId_原文件名
         String safeFileName = fileId + "_" + sanitizeFileName(fileName);
         Path filePath = Paths.get(properties.getTempDir(), safeFileName);
 
@@ -81,19 +70,17 @@ public class DownloadFileManager {
      * 获取文件元数据。
      *
      * @param fileId 文件 ID
-     * @return 文件元数据，不存在则返回 null
+     * @return 文件元数据，不存在或已过期则返回 null
      */
     public FileMeta getFile(String fileId) {
         FileMeta meta = fileMap.get(fileId);
         if (meta == null) {
             return null;
         }
-        // 检查文件是否过期
         if (Instant.now().isAfter(meta.expireAt)) {
             removeFile(fileId);
             return null;
         }
-        // 检查文件是否还存在
         if (!Files.exists(Paths.get(meta.filePath))) {
             fileMap.remove(fileId);
             return null;
@@ -119,7 +106,7 @@ public class DownloadFileManager {
     }
 
     /**
-     * 清理所有过期文件。
+     * 清理所有过期文件及目录中的残留文件。
      */
     public void cleanExpiredFiles() {
         Instant now = Instant.now();
@@ -130,13 +117,11 @@ public class DownloadFileManager {
                 count++;
             }
         }
-        // 同时清理目录中不在 fileMap 中的残留文件
         try {
             Path dir = Paths.get(properties.getTempDir());
             if (Files.isDirectory(dir)) {
                 Files.list(dir).forEach(path -> {
                     String name = path.getFileName().toString();
-                    // 检查是否在 fileMap 中（通过文件名中的 fileId 前缀）
                     boolean found = fileMap.values().stream()
                             .anyMatch(meta -> Paths.get(meta.filePath).equals(path));
                     if (!found) {
@@ -159,9 +144,7 @@ public class DownloadFileManager {
 
     /**
      * 构造文件下载 URL。
-     *
-     * <p>优先使用配置的 {@code reader.download.base-url}；
-     * 未配置时从当前 HTTP 请求上下文推断服务基础 URL。
+     * <p>优先使用配置的 base-url，未配置时使用 localhost 兜底。
      *
      * @param fileId 文件 ID
      * @return 完整下载 URL
@@ -169,41 +152,13 @@ public class DownloadFileManager {
     public String buildDownloadUrl(String fileId) {
         String baseUrl = properties.getBaseUrl();
         if (baseUrl == null || baseUrl.isEmpty()) {
-            // 从当前请求上下文推断
-            HttpServletRequest request = getCurrentRequest();
-            if (request != null) {
-                String scheme = request.getScheme();
-                String serverName = request.getServerName();
-                int port = request.getServerPort();
-                String contextPath = request.getContextPath();
-
-                if ((scheme.equals("http") && port == 80) || (scheme.equals("https") && port == 443)) {
-                    baseUrl = scheme + "://" + serverName;
-                } else {
-                    baseUrl = scheme + "://" + serverName + ":" + port;
-                }
-                baseUrl = baseUrl + contextPath;
-            } else {
-                // 无请求上下文时使用 localhost 兜底
-                baseUrl = "http://localhost:8081";
-                log.warn("无法获取请求上下文，使用兜底 base-url: {}", baseUrl);
-            }
+            baseUrl = "http://localhost:8081";
+            log.warn("未配置 reader.download.base-url，使用兜底: {}", baseUrl);
         }
-        // 去掉末尾斜杠
         if (baseUrl.endsWith("/")) {
             baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
         }
-        return baseUrl + "/downloads/" + fileId;
-    }
-
-    /**
-     * 从 Spring 请求上下文获取当前 HTTP 请求。
-     *
-     * @return 当前 HttpServletRequest，无上下文时返回 null
-     */
-    private HttpServletRequest getCurrentRequest() {
-        ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-        return attrs != null ? attrs.getRequest() : null;
+        return baseUrl + "/api/reader/download/" + fileId;
     }
 
     /** 文件名净化：只保留字母、数字、中文、下划线、点、横线 */

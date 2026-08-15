@@ -12,7 +12,6 @@
 - **单章正文** — 获取指定章节内容
 - **批量下载** — 并发下载多章正文，暂存为 TXT 文件并提供 HTTP 下载链接（24 小时有效）
 - **内置 8 个书源** — 4 个小说源 + 4 个漫画源，开箱即用
-- **运行时导入** — 支持通过 `importSources` 动态导入外部书源
 
 ## 快速开始
 
@@ -71,14 +70,14 @@ URL: http://localhost:8081/mcp
 
 | 工具 | 说明 | 关键参数 |
 |------|------|----------|
-| `reader_list_sources` | 列出所有书源（小说+漫画） | 无 |
-| `reader_search` | 按关键词搜索小说 | `keyword`（必填）、`sourceUrl`（可选，传 `all` 聚合搜索） |
-| `reader_search_comic` | 按关键词搜索漫画 | `keyword`（必填）、`sourceUrl`（可选，传 `all` 聚合搜索） |
-| `reader_search_by_author` | 按作者搜索小说 | `author`（必填）、`sourceUrl`（可选） |
-| `reader_book_info` | 获取书籍详情 | `sourceUrl`、`bookUrl` |
-| `reader_chapters` | 获取章节目录 | `sourceUrl`、`bookUrl` |
-| `reader_content` | 获取单章正文 | `sourceUrl`、`bookUrl`、`chapterIndex`（从 1 开始） |
-| `reader_download` | 批量下载章节并返回下载链接 | `sourceUrl`、`bookUrl`、`start`、`end` |
+| `reader_list_sources` | 列出书源（可按类型筛选） | `type`（可选：`novel`=仅小说源，`comic`=仅漫画源，空=全部） |
+| `reader_search` | 按关键词搜索小说 | `keyword`（必填）、`source`（可选，书源简称，传入则只搜该源，不传聚合所有小说源） |
+| `reader_search_comic` | 按关键词搜索漫画 | `keyword`（必填）、`source`（可选，书源简称，传入则只搜该源，不传聚合所有漫画源） |
+| `reader_search_by_author` | 按作者搜索小说 | `author`（必填），聚合所有小说源 |
+| `reader_book_info` | 获取书籍详情 | `source`（书源简称，从搜索结果获取）、`bookUrl` |
+| `reader_chapters` | 获取章节目录 | `source`（书源简称）、`bookUrl` |
+| `reader_content` | 获取单章正文 | `source`（书源简称）、`bookUrl`、`chapterIndex`（从 1 开始） |
+| `reader_download` | 批量下载章节并返回下载链接 | `source`（书源简称）、`bookUrl`、`start`、`end` |
 
 ### 典型调用流程
 
@@ -90,22 +89,23 @@ reader_list_sources → reader_search / reader_search_comic → reader_book_info
 
 ### 小说源（4 个）
 
-| 源名称 | URL | 类型 |
-|--------|-----|------|
-| 八零小说 | `http://www.80ge.info` | novel |
-| 独步小说 | `https://www.dbxsd.com` | novel |
-| 猫眼看书 | `http://api.lemiyigou.com` | novel |
-| 七猫小说 | `https://api-bc.wtzw.com` | novel |
+| 源名称 | 简称(source) | URL | 类型 |
+|--------|-------------|-----|------|
+| 八零小说 | `80` | `http://www.80ge.info` | novel |
+| 独步小说 | `dubu` | `https://www.dbxsd.com` | novel |
+| 猫眼看书 | `maoyan` | `http://api.lemiyigou.com` | novel |
+| 七猫小说 | `qimao` | `https://api-bc.wtzw.com` | novel |
 
 ### 漫画源（4 个）
 
-| 源名称 | URL | 类型 |
-|--------|-----|------|
-| G站漫画 | `https://godamanga.com` | comic |
-| 漫画台 | `https://m.manhuatai.com` | comic |
-| 如漫画 | `https://www.rumanhua.com` | comic |
-| 再漫画 | `https://www.zaimanhua.com` | comic |
+| 源名称 | 简称(source) | URL | 类型 |
+|--------|-------------|-----|------|
+| G站漫画 | `godamanga` | `https://godamanga.com` | comic |
+| 漫画台 | `manhuatai` | `https://m.manhuatai.com` | comic |
+| 如漫画 | `rumanhua` | `https://www.rumanhua.com` | comic |
+| 再漫画 | `zaimanhua` | `https://www.zaimanhua.com` | comic |
 
+> 后续操作传入 `source` 简称即可（如 `80`、`dubu`、`godamanga`），无需传完整 URL。
 > 漫画源在加载时自动执行 `initSource()` 初始化 variable（URL、cookie 等），无需手动调用。
 
 ## 配置
@@ -136,14 +136,14 @@ reader:
   download:
     temp-dir: /tmp/reader-downloads   # 临时文件存放目录
     expire-hours: 24                   # 文件过期时间（小时）
-    base-url: ""                       # 服务外部访问 URL（部署时配置，如 https://reader.example.com）
+    base-url: ""                       # 服务外部访问 URL（部署时必须配置，如 https://reader.example.com）
 ```
 
 ### 下载文件
 
 `reader_download` 工具下载完成后，将内容暂存为 TXT 文件，返回包含 `downloadUrl` 的结果。
 
-- 下载链接格式：`GET /downloads/{fileId}`
+- 下载链接格式：`GET /api/reader/download/{fileId}`
 - 文件默认 24 小时后自动过期清理
 - 部署到服务器时，通过 `reader.download.base-url` 配置服务外部访问 URL，确保下载链接可远程访问
 
@@ -153,17 +153,22 @@ reader:
 cn.kong.reader/
 ├── ReaderApplication.java           # 启动类（@EnableScheduling）
 ├── config/
-│   └── DownloadProperties.java        # 下载文件配置属性
+│   ├── TempFileProperties.java       # 临时文件配置属性
+│   └── WebConfig.java                # Web 配置（根路径转发到 index.html）
 ├── controller/
-│   └── FileDownloadController.java    # 文件下载 HTTP 端点
+│   └── ReaderController.java         # REST API（搜索/详情/目录/正文/下载）
 ├── mcp/
 │   ├── McpToolConfig.java            # MCP 工具注册配置
 │   └── ReaderMcpTools.java           # 8 个 MCP 工具定义
 ├── service/
 │   ├── ReaderApi.java                # 业务逻辑（搜索/详情/目录/正文/下载）
-│   └── DownloadFileManager.java      # 下载文件管理（创建/查询/清理）
+│   └── TempFileService.java          # 临时文件管理（创建/查询/清理）
 └── task/
     └── FileCleanupTask.java          # 定时清理过期文件
+
+src/main/resources/
+└── static/
+    └── index.html                    # Web 搜索页面
 ```
 
 ### 技术栈
@@ -177,8 +182,8 @@ cn.kong.reader/
 
 ### 核心设计
 
-- **引擎委托**：业务逻辑层直接调用 `BookSourceManager`（高层 API）和 `ReaderEngine`（底层 API），引擎内部通过 `ReaderEngineBridge.kt` 的 `runBlocking` 将 Kotlin suspend 函数桥接为同步调用
-- **LRU 缓存**：搜索结果（500 条）和章节列表（100 条）使用 `LinkedHashMap` access-order 实现 LRU 淘汰
-- **per-key 锁**：章节缓存使用 double-check + per-key lock 防止缓存击穿
-- **BookSourceManager 单例**：内置 8 个书源（4 小说 + 4 漫画），支持运行时导入外部书源
-- **临时文件管理**：下载内容写入临时文件，定时清理过期文件（默认 24 小时），通过 HTTP 端点提供远程下载
+- **引擎委托**：业务逻辑层直接调用 `ReaderService` 高层 API，只需传入书源简称和书籍 URL，引擎内部通过 `ReaderEngineBridge.kt` 的 `runBlocking` 将 Kotlin suspend 函数桥接为同步调用
+- **Book 缓存**：引擎内部以 `source + bookUrl` 为 key 缓存 Book 对象，避免获取目录和正文时重复请求详情页
+- **通用 DTO**：书源信息（`SourceInfo`）、搜索结果（`SearchResult`）、书籍详情（`BookDetail`）、章节信息（`ChapterInfo`）、章节正文（`ChapterContent`）均为通用 DTO，不暴露内部实体对象
+- **ReaderService 单例**：内置 8 个书源（4 小说 + 4 漫画），开箱即用
+- **临时文件管理**：下载内容写入临时文件，定时清理过期文件（默认 24 小时），通过 `/api/reader/download/{fileId}` 端点提供远程下载

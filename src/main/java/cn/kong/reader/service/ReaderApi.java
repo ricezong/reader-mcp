@@ -1,11 +1,11 @@
 package cn.kong.reader.service;
 
-import cn.kong.app.engine.BookSourceManager;
-import cn.kong.app.engine.ReaderEngine;
-import io.legado.app.data.entities.Book;
-import io.legado.app.data.entities.BookChapter;
-import io.legado.app.data.entities.BookSource;
-import io.legado.app.data.entities.SearchBook;
+import cn.kong.app.engine.ReaderService;
+import cn.kong.app.engine.dto.BookDetail;
+import cn.kong.app.engine.dto.ChapterContent;
+import cn.kong.app.engine.dto.ChapterInfo;
+import cn.kong.app.engine.dto.SearchResult;
+import cn.kong.app.engine.dto.SourceInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,66 +13,25 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
-import java.time.Instant;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 小说/漫画 API 业务逻辑层：封装搜索/详情/目录/正文/下载，支持单源与多源聚合。
- *
- * <p>底层使用 {@link BookSourceManager}（高层管理 API）和 {@link ReaderEngine}（底层静态方法），
- * reader-engine 内部已通过 {@code ReaderEngineBridge.kt} 的 {@code runBlocking} 将 Kotlin suspend
- * 函数桥接为同步调用，本类无需手动管理协程。
- *
- * <p>BookSourceManager 是单例管理器，内置 4 个小说源 + 4 个漫画源，开箱即用。
- * 支持运行时通过 {@code importSources} 导入外部书源。
- *
- * <p>缓存策略：
- * <ul>
- *   <li>{@code searchCache} — 搜索结果缓存（LRU，上限 500 条），用于 resolveBook 时避免重复网络请求</li>
- *   <li>{@code chapterCache} — 章节列表缓存（LRU，上限 100 条）</li>
- * </ul>
+ * 小说/漫画业务逻辑层：封装搜索、详情、目录、正文、下载等能力。
+ * <p>直接透传 {@link ReaderService} 返回的 DTO 对象，不做 Map 转换。
  */
 @Service
 public class ReaderApi {
 
     private static final Logger log = LoggerFactory.getLogger(ReaderApi.class);
 
-    private final DownloadFileManager fileManager;
-
-
-    /** 搜索缓存最大条目数 */
-    private static final int MAX_SEARCH_CACHE_SIZE = 500;
-
-    /** 章节列表缓存最大条目数 */
-    private static final int MAX_CHAPTER_CACHE_SIZE = 100;
-
     /** 搜索关键词最大长度 */
     private static final int MAX_KEYWORD_LENGTH = 100;
 
-    private final BookSourceManager manager = BookSourceManager.getInstance();
+    private final ReaderService service = ReaderService.getInstance();
 
-    /** 搜索结果缓存：key = sourceUrl + "\u0001" + bookUrl（LRU，有上限） */
-    private final Map<String, SearchBook> searchCache = Collections.synchronizedMap(
-            new LinkedHashMap<String, SearchBook>(64, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<String, SearchBook> eldest) {
-                    return size() > MAX_SEARCH_CACHE_SIZE;
-                }
-            });
-
-    /** 章节列表缓存：key = sourceUrl + "\u0001" + bookUrl（LRU，有上限） */
-    private final Map<String, List<BookChapter>> chapterCache = Collections.synchronizedMap(
-            new LinkedHashMap<String, List<BookChapter>>(32, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<String, List<BookChapter>> eldest) {
-                    return size() > MAX_CHAPTER_CACHE_SIZE;
-                }
-            });
-
-    /** per-key 锁，防止章节缓存击穿（Thundering Herd） */
-    private final ConcurrentHashMap<String, Object> keyLocks = new ConcurrentHashMap<>();
+    private final TempFileService fileService;
 
     @Value("${reader.max-search-results:50}")
     private int maxSearchResults;
@@ -80,11 +39,8 @@ public class ReaderApi {
     @Value("${reader.max-download-chapters:200}")
     private int maxDownloadChapters;
 
-    /**
-     * 构造方法注入下载文件管理器。
-     */
-    public ReaderApi(DownloadFileManager fileManager) {
-        this.fileManager = fileManager;
+    public ReaderApi(TempFileService fileService) {
+        this.fileService = fileService;
     }
 
     // ---------- 源管理 ----------
@@ -94,12 +50,8 @@ public class ReaderApi {
      *
      * @return 书源信息列表
      */
-    public List<Map<String, Object>> listSources() {
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (BookSource src : manager.listAllSources()) {
-            result.add(sourceToMap(src));
-        }
-        return result;
+    public List<SourceInfo> listSources() {
+        return service.listAllSources();
     }
 
     /**
@@ -107,12 +59,8 @@ public class ReaderApi {
      *
      * @return 小说源信息列表
      */
-    public List<Map<String, Object>> listNovelSources() {
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (BookSource src : manager.listNovelSources()) {
-            result.add(sourceToMap(src));
-        }
-        return result;
+    public List<SourceInfo> listNovelSources() {
+        return service.listNovelSources();
     }
 
     /**
@@ -120,156 +68,89 @@ public class ReaderApi {
      *
      * @return 漫画源信息列表
      */
-    public List<Map<String, Object>> listComicSources() {
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (BookSource src : manager.listComicSources()) {
-            result.add(sourceToMap(src));
-        }
-        return result;
-    }
-
-    private Map<String, Object> sourceToMap(BookSource src) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("bookSourceUrl", src.getBookSourceUrl());
-        m.put("bookSourceName", src.getBookSourceName());
-        m.put("bookSourceType", src.getBookSourceType());
-        m.put("type", src.getBookSourceType() == 2 ? "comic" : "novel");
-        return m;
+    public List<SourceInfo> listComicSources() {
+        return service.listComicSources();
     }
 
     // ---------- 搜索 ----------
 
     /**
-     * 按关键词搜索小说。
+     * 按关键词搜索小说（聚合所有小说源）。
      *
-     * @param keyword   搜索关键词
-     * @param sourceUrl 书源 URL，传 null 或 "all" 聚合搜索所有小说源
-     * @return 搜索结果列表
+     * @param keyword 搜索关键词
+     * @return 搜索结果列表，每条结果包含 source 字段供后续操作使用
      */
-    public List<Map<String, Object>> searchNovel(String keyword, String sourceUrl) {
-        if (keyword == null || keyword.isBlank()) {
-            throw new IllegalArgumentException("搜索关键词不能为空");
-        }
-        if (keyword.length() > MAX_KEYWORD_LENGTH) {
-            throw new IllegalArgumentException("搜索关键词过长，最大 " + MAX_KEYWORD_LENGTH + " 字符");
-        }
-        if (sourceUrl == null || sourceUrl.isEmpty() || "all".equalsIgnoreCase(sourceUrl)) {
-            return searchBooksToMaps(manager.searchNovel(keyword));
-        }
-        BookSource src = manager.getSource(sourceUrl);
-        if (src == null) throw new IllegalArgumentException("未知书源 URL: " + sourceUrl);
-        return searchBooksToMaps(manager.search(src, keyword));
+    public List<SearchResult> searchNovel(String keyword) {
+        validateKeyword(keyword);
+        return limitResults(service.searchNovel(keyword));
     }
 
     /**
-     * 按关键词搜索漫画。
+     * 按关键词搜索小说（聚合所有小说源，支持分页）。
      *
-     * @param keyword   搜索关键词
-     * @param sourceUrl 书源 URL，传 null 或 "all" 聚合搜索所有漫画源
+     * @param keyword 搜索关键词
+     * @param page    页码（从 1 开始）
      * @return 搜索结果列表
      */
-    public List<Map<String, Object>> searchComic(String keyword, String sourceUrl) {
-        if (keyword == null || keyword.isBlank()) {
-            throw new IllegalArgumentException("搜索关键词不能为空");
-        }
-        if (keyword.length() > MAX_KEYWORD_LENGTH) {
-            throw new IllegalArgumentException("搜索关键词过长，最大 " + MAX_KEYWORD_LENGTH + " 字符");
-        }
-        if (sourceUrl == null || sourceUrl.isEmpty() || "all".equalsIgnoreCase(sourceUrl)) {
-            return searchBooksToMaps(manager.searchComic(keyword));
-        }
-        BookSource src = manager.getSource(sourceUrl);
-        if (src == null) throw new IllegalArgumentException("未知书源 URL: " + sourceUrl);
-        return searchBooksToMaps(manager.search(src, keyword));
+    public List<SearchResult> searchNovel(String keyword, int page) {
+        validateKeyword(keyword);
+        validatePage(page);
+        return limitResults(service.searchNovel(keyword, page));
     }
 
     /**
-     * 按关键词搜索全部源（小说 + 漫画）。
+     * 按关键词搜索漫画（聚合所有漫画源）。
      *
-     * @param keyword   搜索关键词
-     * @param sourceUrl 书源 URL，传 null 或 "all" 聚合搜索所有源
-     * @return 搜索结果列表
+     * @param keyword 搜索关键词
+     * @return 搜索结果列表，每条结果包含 source 字段供后续操作使用
      */
-    public List<Map<String, Object>> searchAll(String keyword, String sourceUrl) {
-        if (keyword == null || keyword.isBlank()) {
-            throw new IllegalArgumentException("搜索关键词不能为空");
-        }
-        if (keyword.length() > MAX_KEYWORD_LENGTH) {
-            throw new IllegalArgumentException("搜索关键词过长，最大 " + MAX_KEYWORD_LENGTH + " 字符");
-        }
-        if (sourceUrl == null || sourceUrl.isEmpty() || "all".equalsIgnoreCase(sourceUrl)) {
-            return searchBooksToMaps(manager.searchAll(keyword));
-        }
-        BookSource src = manager.getSource(sourceUrl);
-        if (src == null) throw new IllegalArgumentException("未知书源 URL: " + sourceUrl);
-        return searchBooksToMaps(manager.search(src, keyword));
+    public List<SearchResult> searchComic(String keyword) {
+        validateKeyword(keyword);
+        return limitResults(service.searchComic(keyword));
     }
 
     /**
-     * 按作者搜索小说。
+     * 按关键词搜索漫画（聚合所有漫画源，支持分页）。
      *
-     * @param author    作者名
-     * @param sourceUrl 书源 URL，传 null 或 "all" 聚合搜索
-     * @return 匹配该作者的作品列表
+     * @param keyword 搜索关键词
+     * @param page    页码（从 1 开始）
+     * @return 搜索结果列表
      */
-    public List<Map<String, Object>> searchNovelByAuthor(String author, String sourceUrl) {
-        if (author == null || author.isBlank()) {
-            throw new IllegalArgumentException("作者名不能为空");
-        }
-        if (author.length() > MAX_KEYWORD_LENGTH) {
-            throw new IllegalArgumentException("作者名过长，最大 " + MAX_KEYWORD_LENGTH + " 字符");
-        }
-
-        // 先用作者名作为关键词搜索
-        List<Map<String, Object>> searchResults;
-        if (sourceUrl == null || sourceUrl.isEmpty() || "all".equalsIgnoreCase(sourceUrl)) {
-            searchResults = searchBooksToMaps(manager.searchNovelByAuthor(author));
-        } else {
-            BookSource src = manager.getSource(sourceUrl);
-            if (src == null) throw new IllegalArgumentException("未知书源 URL: " + sourceUrl);
-            searchResults = searchBooksToMaps(manager.search(src, author));
-        }
-
-        // 按作者字段过滤
-        String authorNorm = author.trim().toLowerCase();
-        List<Map<String, Object>> filtered = new ArrayList<>();
-        for (Map<String, Object> book : searchResults) {
-            Object bookAuthorObj = book.get("author");
-            if (bookAuthorObj == null) continue;
-            String bookAuthor = bookAuthorObj.toString().trim().toLowerCase();
-            if (bookAuthor.contains(authorNorm) || authorNorm.contains(bookAuthor)) {
-                filtered.add(book);
-            }
-        }
-        return filtered;
+    public List<SearchResult> searchComic(String keyword, int page) {
+        validateKeyword(keyword);
+        validatePage(page);
+        return limitResults(service.searchComic(keyword, page));
     }
 
-    private List<Map<String, Object>> searchBooksToMaps(List<SearchBook> books) {
-        List<Map<String, Object>> result = new ArrayList<>();
-        if (books == null) return result;
-
-        for (SearchBook b : books) {
-            if (b.getBookUrl() == null || b.getBookUrl().isEmpty()) continue;
-            if (b.getOrigin() != null && !b.getOrigin().isEmpty()) {
-                searchCache.put(b.getOrigin() + "\u0001" + b.getBookUrl(), b);
-            }
-            result.add(searchBookToMap(b));
-            if (result.size() >= maxSearchResults) break;
+    /**
+     * 按关键词在指定书源中搜索（支持分页）。
+     * <p>引擎的 {@code search(keyword, source, page)} 方法会根据 source 简称定位到具体书源并搜索。
+     * source 为 null 或空字符串时等同于聚合搜索。
+     *
+     * @param keyword 搜索关键词
+     * @param source  书源简称（如 80、dubu、godamanga），为空则聚合搜索
+     * @param page    页码（从 1 开始）
+     * @return 搜索结果列表，每条结果包含 source 字段供后续操作使用
+     */
+    public List<SearchResult> searchBySource(String keyword, String source, int page) {
+        validateKeyword(keyword);
+        validatePage(page);
+        if (source == null || source.isBlank()) {
+            // 未指定书源，走聚合搜索
+            return limitResults(service.search(keyword, page));
         }
-        return result;
+        return limitResults(service.search(keyword, source, page));
     }
 
-    private Map<String, Object> searchBookToMap(SearchBook b) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("name", b.getName());
-        m.put("author", b.getAuthor());
-        m.put("bookUrl", b.getBookUrl());
-        m.put("intro", b.getIntro());
-        m.put("kind", b.getKind());
-        m.put("wordCount", b.getWordCount());
-        m.put("coverUrl", b.getCoverUrl());
-        m.put("origin", b.getOrigin());
-        return m;
+    /**
+     * 按作者搜索小说（聚合所有小说源，引擎自动过滤匹配作者的结果）。
+     *
+     * @param author 作者名
+     * @return 匹配该作者的作品列表，每条结果包含 source 字段供后续操作使用
+     */
+    public List<SearchResult> searchNovelByAuthor(String author) {
+        validateKeyword(author, "作者名");
+        return limitResults(service.searchNovelByAuthor(author));
     }
 
     // ---------- 详情 ----------
@@ -277,105 +158,25 @@ public class ReaderApi {
     /**
      * 获取书籍详情。
      *
-     * @param sourceUrl 书源 URL
-     * @param bookUrl   书籍 URL
+     * @param source  书源简称
+     * @param bookUrl 书籍 URL
      * @return 书籍详情
      */
-    public Map<String, Object> getBookInfo(String sourceUrl, String bookUrl) {
-        Book book = resolveBook(sourceUrl, bookUrl);
-        return bookToMap(book);
-    }
-
-    private Book resolveBook(String sourceUrl, String bookUrl) {
-        BookSource src = manager.getSource(sourceUrl);
-        if (src == null) throw new IllegalArgumentException("未知书源 URL: " + sourceUrl);
-
-        // 优先从搜索缓存获取 SearchBook，再转为 Book
-        SearchBook cached = searchCache.get(sourceUrl + "\u0001" + bookUrl);
-        if (cached != null) {
-            Book book = cached.toBook();
-            // 刷新详情
-            return ReaderEngine.getBookInfo(src, book);
-        }
-        return ReaderEngine.getBookInfo(src, bookUrl);
-    }
-
-    private Map<String, Object> bookToMap(Book book) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("name", book.getName());
-        m.put("author", book.getAuthor());
-        m.put("bookUrl", book.getBookUrl());
-        m.put("tocUrl", book.getTocUrl());
-        m.put("intro", book.getIntro());
-        m.put("coverUrl", book.getCoverUrl());
-        m.put("kind", book.getKind());
-        m.put("wordCount", book.getWordCount());
-        m.put("origin", book.getOrigin());
-        return m;
+    public BookDetail getBookInfo(String source, String bookUrl) {
+        return service.getBookDetail(bookUrl, source);
     }
 
     // ---------- 目录 ----------
 
     /**
-     * 获取章节列表（带缓存）。
+     * 获取章节列表。
      *
-     * @param sourceUrl 书源 URL
-     * @param bookUrl    书籍 URL
-     * @return 包含 total 和 chapters 的目录信息
+     * @param source  书源简称
+     * @param bookUrl 书籍 URL
+     * @return 章节列表
      */
-    public Map<String, Object> getChapterList(String sourceUrl, String bookUrl) {
-        Book book = resolveBook(sourceUrl, bookUrl);
-        List<BookChapter> chapters = getChapters(sourceUrl, bookUrl, book);
-
-        List<Map<String, Object>> chapterList = new ArrayList<>();
-        if (chapters != null) {
-            for (int i = 0; i < chapters.size(); i++) {
-                BookChapter ch = chapters.get(i);
-                Map<String, Object> m = new LinkedHashMap<>();
-                m.put("index", i + 1);
-                m.put("title", ch.getTitle());
-                m.put("url", ch.getUrl());
-                chapterList.add(m);
-            }
-        }
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("total", chapterList.size());
-        result.put("chapters", chapterList);
-        return result;
-    }
-
-    /**
-     * 获取章节列表，优先从缓存读取。
-     * 使用 per-key 锁 + double-check 防止缓存击穿。
-     */
-    private List<BookChapter> getChapters(String sourceUrl, String bookUrl, Book book) {
-        String cacheKey = sourceUrl + "\u0001" + bookUrl;
-
-        // 快速路径：先查缓存（无锁）
-        List<BookChapter> cached = chapterCache.get(cacheKey);
-        if (cached != null) {
-            return cached;
-        }
-
-        // 慢速路径：per-key 锁防止缓存击穿
-        Object lock = keyLocks.computeIfAbsent(cacheKey, k -> new Object());
-        try {
-            synchronized (lock) {
-                cached = chapterCache.get(cacheKey);
-                if (cached != null) {
-                    return cached;
-                }
-                BookSource src = manager.getSource(sourceUrl);
-                if (src == null) throw new IllegalArgumentException("未知书源 URL: " + sourceUrl);
-                List<BookChapter> chapters = ReaderEngine.getChapterList(src, book);
-                if (chapters != null) {
-                    chapterCache.put(cacheKey, chapters);
-                }
-                return chapters;
-            }
-        } finally {
-            keyLocks.remove(cacheKey);
-        }
+    public List<ChapterInfo> getChapterList(String source, String bookUrl) {
+        return service.getChapterList(bookUrl, source);
     }
 
     // ---------- 单章正文 ----------
@@ -383,32 +184,17 @@ public class ReaderApi {
     /**
      * 获取单章正文。
      *
-     * @param sourceUrl    书源 URL
+     * @param source       书源简称
      * @param bookUrl      书籍 URL
      * @param chapterIndex 章节序号（从 1 开始）
-     * @return 章节正文信息
+     * @return 章节正文内容（漫画为图片 HTML）
      */
-    public Map<String, Object> getBookContent(String sourceUrl, String bookUrl, int chapterIndex) {
-        BookSource src = manager.getSource(sourceUrl);
-        if (src == null) throw new IllegalArgumentException("未知书源 URL: " + sourceUrl);
-
-        Book book = resolveBook(sourceUrl, bookUrl);
-        List<BookChapter> chapters = getChapters(sourceUrl, bookUrl, book);
-        if (chapters == null || chapters.isEmpty()) {
-            throw new RuntimeException("章节目录为空");
+    public String getBookContent(String source, String bookUrl, int chapterIndex) {
+        if (chapterIndex < 1) {
+            throw new IllegalArgumentException("章节序号不能小于 1");
         }
-        if (chapterIndex < 1 || chapterIndex > chapters.size()) {
-            throw new IllegalArgumentException("章节序号超出范围 1-" + chapters.size());
-        }
-        BookChapter ch = chapters.get(chapterIndex - 1);
-        String content = ReaderEngine.getBookContent(src, book, ch);
-
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("index", chapterIndex);
-        m.put("title", ch.getTitle());
-        m.put("content", content);
-        m.put("length", content == null ? 0 : content.length());
-        return m;
+        // 引擎的 index 从 0 开始，对外从 1 开始，需要减 1
+        return service.getContent(bookUrl, source, chapterIndex - 1);
     }
 
     // ---------- 批量下载 ----------
@@ -416,26 +202,26 @@ public class ReaderApi {
     /**
      * 批量下载章节正文，将内容写入临时 TXT 文件并返回文件信息。
      *
-     * <p>使用 BookSourceManager 的批量下载 API，引擎内部已处理并发和线程安全。
+     * <p>使用 ReaderService 的批量下载 API，引擎内部已处理并发和 Book 缓存。
      * 下载完成后将拼接后的全文写入临时文件，文件 24 小时后自动过期。
      *
-     * @param sourceUrl 书源 URL
-     * @param bookUrl   书籍 URL
-     * @param start     起始章节序号（从 1 开始）
-     * @param end       结束章节序号
+     * @param source  书源简称
+     * @param bookUrl 书籍 URL
+     * @param start   起始章节序号（从 1 开始）
+     * @param end     结束章节序号
      * @return 包含文件 ID、文件名、下载统计信息的结果（不含正文内容）
      */
-    public Map<String, Object> downloadChapters(String sourceUrl, String bookUrl, int start, int end) {
-        BookSource src = manager.getSource(sourceUrl);
-        if (src == null) throw new IllegalArgumentException("未知书源 URL: " + sourceUrl);
+    public DownloadResult downloadChapters(String source, String bookUrl, int start, int end) {
         if (start < 1) throw new IllegalArgumentException("起始章节不能小于 1");
         if (start > end) throw new IllegalArgumentException("起始章节不能大于结束章节");
 
-        Book book = resolveBook(sourceUrl, bookUrl);
-        List<BookChapter> chapters = getChapters(sourceUrl, bookUrl, book);
+        // 获取详情和目录
+        BookDetail detail = service.getBookDetail(bookUrl, source);
+        List<ChapterInfo> chapters = service.getChapterList(bookUrl, source);
         if (chapters == null || chapters.isEmpty()) {
             throw new RuntimeException("章节目录为空");
         }
+
         int to = Math.min(chapters.size(), end);
 
         // 限制单次下载章节数
@@ -444,32 +230,29 @@ public class ReaderApi {
                     "单次下载章节数超出上限 " + maxDownloadChapters + "（请求 " + (to - start + 1) + " 章）");
         }
 
-        // 截取要下载的章节
-        List<BookChapter> toDownload = chapters.subList(start - 1, to);
+        String bookName = detail.getName() != null ? detail.getName() : "unknown";
+        String authorName = detail.getAuthor() != null ? detail.getAuthor() : "未知";
+        String sourceName = detail.getSourceName() != null ? detail.getSourceName() : source;
 
-        // 使用引擎的批量下载 API
-        List<String> contents = manager.batchDownloadContent(book, toDownload);
+        // 使用引擎的批量下载 API（index 从 0 开始）
+        List<ChapterContent> contents = service.batchDownload(bookUrl, source, start - 1, to);
 
         // 统计和拼接
         int successCount = 0;
         int failCount = 0;
         long totalLength = 0;
-        String bookName = book.getName() != null ? book.getName() : "unknown";
-        String authorName = book.getAuthor() != null ? book.getAuthor() : "未知";
-        String sourceName = src.getBookSourceName() != null ? src.getBookSourceName() : sourceUrl;
 
         StringBuilder sb = new StringBuilder();
         sb.append("书名：").append(bookName).append("\n");
         sb.append("作者：").append(authorName).append("\n");
-        sb.append("来源：").append(sourceName).append(" (").append(sourceUrl).append(")\n");
+        sb.append("来源：").append(sourceName).append(" (").append(source).append(")\n");
         sb.append("章节范围：第 ").append(start).append(" 章 ~ 第 ").append(to)
           .append(" 章（共 ").append(contents.size()).append(" 章）\n");
         sb.append("\n========================================\n\n");
 
-        for (int i = 0; i < contents.size(); i++) {
-            BookChapter ch = toDownload.get(i);
+        for (ChapterContent ch : contents) {
             String title = ch.getTitle() != null ? ch.getTitle() : "";
-            String content = contents.get(i);
+            String content = ch.getContent();
 
             sb.append(title).append("\n\n");
 
@@ -486,9 +269,9 @@ public class ReaderApi {
 
         // 写入临时文件
         String txtFileName = bookName + "_" + start + "-" + to + ".txt";
-        DownloadFileManager.FileMeta fileMeta;
+        TempFileService.FileMeta fileMeta;
         try {
-            fileMeta = fileManager.createFile(txtFileName);
+            fileMeta = fileService.createFile(txtFileName);
             Files.write(Paths.get(fileMeta.getFilePath()),
                     sb.toString().getBytes(StandardCharsets.UTF_8));
         } catch (IOException e) {
@@ -498,26 +281,117 @@ public class ReaderApi {
 
         long fileSize = sb.length();
 
-        Map<String, Object> resp = new LinkedHashMap<>();
-        resp.put("fileId", fileMeta.getFileId());
-        resp.put("fileName", txtFileName);
-        resp.put("fileSize", fileSize);
-        resp.put("bookName", bookName);
-        resp.put("author", authorName);
-        resp.put("sourceName", sourceName);
-        resp.put("chapterRange", start + "-" + to);
-        resp.put("totalChapters", contents.size());
-        resp.put("successCount", successCount);
-        resp.put("failCount", failCount);
-        resp.put("totalLength", totalLength);
-        resp.put("expireAt", fileMeta.getExpireAt().toString());
-        return resp;
+        DownloadResult result = new DownloadResult(
+                fileMeta.getFileId(),
+                txtFileName,
+                fileSize,
+                bookName,
+                authorName,
+                sourceName,
+                start + "-" + to,
+                contents.size(),
+                successCount,
+                failCount,
+                totalLength,
+                fileMeta.getExpireAt().toString()
+        );
+        result.setDownloadUrl(fileService.buildDownloadUrl(result.getFileId()));
+        return result;
     }
 
-    /** 清除所有缓存 */
-    public void clearCaches() {
-        searchCache.clear();
-        chapterCache.clear();
-        keyLocks.clear();
+    // ---------- 工具方法 ----------
+
+    private void validateKeyword(String keyword) {
+        validateKeyword(keyword, "搜索关键词");
+    }
+
+    private void validateKeyword(String keyword, String label) {
+        if (keyword == null || keyword.isBlank()) {
+            throw new IllegalArgumentException(label + "不能为空");
+        }
+        if (keyword.length() > MAX_KEYWORD_LENGTH) {
+            throw new IllegalArgumentException(label + "过长，最大 " + MAX_KEYWORD_LENGTH + " 字符");
+        }
+    }
+
+    /** 校验页码（从 1 开始） */
+    private void validatePage(int page) {
+        if (page < 1) {
+            throw new IllegalArgumentException("页码不能小于 1");
+        }
+    }
+
+    /** 限制搜索结果数量 */
+    private List<SearchResult> limitResults(List<SearchResult> results) {
+        if (results == null) return Collections.emptyList();
+        if (results.size() <= maxSearchResults) return results;
+        return results.subList(0, maxSearchResults);
+    }
+
+    // ---------- 下载结果 DTO ----------
+
+    /** 下载结果信息 */
+    public static class DownloadResult {
+        private String fileId;
+        private String fileName;
+        private long fileSize;
+        private String bookName;
+        private String author;
+        private String sourceName;
+        private String chapterRange;
+        private int totalChapters;
+        private int successCount;
+        private int failCount;
+        private long totalLength;
+        private String expireAt;
+        private String downloadUrl;
+
+        public DownloadResult() {}
+
+        public DownloadResult(String fileId, String fileName, long fileSize,
+                              String bookName, String author, String sourceName,
+                              String chapterRange, int totalChapters,
+                              int successCount, int failCount,
+                              long totalLength, String expireAt) {
+            this.fileId = fileId;
+            this.fileName = fileName;
+            this.fileSize = fileSize;
+            this.bookName = bookName;
+            this.author = author;
+            this.sourceName = sourceName;
+            this.chapterRange = chapterRange;
+            this.totalChapters = totalChapters;
+            this.successCount = successCount;
+            this.failCount = failCount;
+            this.totalLength = totalLength;
+            this.expireAt = expireAt;
+        }
+
+        public String getFileId() { return fileId; }
+        public void setFileId(String fileId) { this.fileId = fileId; }
+        public String getFileName() { return fileName; }
+        public void setFileName(String fileName) { this.fileName = fileName; }
+        public long getFileSize() { return fileSize; }
+        public void setFileSize(long fileSize) { this.fileSize = fileSize; }
+        public String getBookName() { return bookName; }
+        public void setBookName(String bookName) { this.bookName = bookName; }
+        public String getAuthor() { return author; }
+        public void setAuthor(String author) { this.author = author; }
+        public String getSourceName() { return sourceName; }
+        public void setSourceName(String sourceName) { this.sourceName = sourceName; }
+        public String getChapterRange() { return chapterRange; }
+        public void setChapterRange(String chapterRange) { this.chapterRange = chapterRange; }
+        public int getTotalChapters() { return totalChapters; }
+        public void setTotalChapters(int totalChapters) { this.totalChapters = totalChapters; }
+        public int getSuccessCount() { return successCount; }
+        public void setSuccessCount(int successCount) { this.successCount = successCount; }
+        public int getFailCount() { return failCount; }
+        public void setFailCount(int failCount) { this.failCount = failCount; }
+        public long getTotalLength() { return totalLength; }
+        public void setTotalLength(long totalLength) { this.totalLength = totalLength; }
+        public String getExpireAt() { return expireAt; }
+        public void setExpireAt(String expireAt) { this.expireAt = expireAt; }
+        public String getDownloadUrl() { return downloadUrl; }
+        public void setDownloadUrl(String downloadUrl) { this.downloadUrl = downloadUrl; }
     }
 }

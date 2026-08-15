@@ -55,6 +55,13 @@
             <artifactId>reader-engine</artifactId>
             <version>1.0.0</version>
         </dependency>
+
+        <!-- 测试依赖（JUnit 5 + Spring Boot Test） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

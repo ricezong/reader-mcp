@@ -49,11 +49,17 @@
             <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
         </dependency>
 
-        <!-- reader-engine 引擎（本地安装到 Maven 仓库） -->
+        <!-- reader-engine 引擎（fat jar 已内含 rhino-android） -->
         <dependency>
             <groupId>cn.kong</groupId>
             <artifactId>reader-engine</artifactId>
             <version>1.0.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.github.gedoor</groupId>
+                    <artifactId>rhino-android</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- 测试依赖（JUnit 5 + Spring Boot Test） -->

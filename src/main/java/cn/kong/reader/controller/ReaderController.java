@@ -4,7 +4,7 @@ import cn.kong.app.engine.dto.BookDetail;
 import cn.kong.app.engine.dto.ChapterInfo;
 import cn.kong.app.engine.dto.SearchResult;
 import cn.kong.app.engine.dto.SourceInfo;
-import cn.kong.reader.service.ReaderApi;
+import cn.kong.reader.service.ReaderFacade;
 import cn.kong.reader.service.TempFileService;
 import cn.kong.reader.service.TempFileService.FileMeta;
 import org.slf4j.Logger;
@@ -31,30 +31,30 @@ public class ReaderController {
 
     private static final Logger log = LoggerFactory.getLogger(ReaderController.class);
 
-    private final ReaderApi readerApi;
+    private final ReaderFacade readerFacade;
     private final TempFileService fileService;
 
-    public ReaderController(ReaderApi readerApi, TempFileService fileService) {
-        this.readerApi = readerApi;
+    public ReaderController(ReaderFacade readerFacade, TempFileService fileService) {
+        this.readerFacade = readerFacade;
         this.fileService = fileService;
     }
 
     /** 列出所有书源（小说 + 漫画） */
     @GetMapping("/sources")
     public List<SourceInfo> listSources() {
-        return readerApi.listSources();
+        return readerFacade.listSources();
     }
 
     /** 列出小说源 */
     @GetMapping("/sources/novel")
     public List<SourceInfo> listNovelSources() {
-        return readerApi.listNovelSources();
+        return readerFacade.listNovelSources();
     }
 
     /** 列出漫画源 */
     @GetMapping("/sources/comic")
     public List<SourceInfo> listComicSources() {
-        return readerApi.listComicSources();
+        return readerFacade.listComicSources();
     }
 
     /**
@@ -71,9 +71,9 @@ public class ReaderController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(required = false) String source) {
         if (source != null && !source.isBlank()) {
-            return readerApi.searchBySource(keyword, source, page);
+            return readerFacade.searchBySource(keyword, source, page);
         }
-        return readerApi.searchNovel(keyword, page);
+        return readerFacade.searchNovel(keyword, page);
     }
 
     /**
@@ -90,9 +90,9 @@ public class ReaderController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(required = false) String source) {
         if (source != null && !source.isBlank()) {
-            return readerApi.searchBySource(keyword, source, page);
+            return readerFacade.searchBySource(keyword, source, page);
         }
-        return readerApi.searchComic(keyword, page);
+        return readerFacade.searchComic(keyword, page);
     }
 
     /**
@@ -103,7 +103,7 @@ public class ReaderController {
      */
     @GetMapping("/search/novel/by-author")
     public List<SearchResult> searchNovelByAuthor(@RequestParam String author) {
-        return readerApi.searchNovelByAuthor(author);
+        return readerFacade.searchNovelByAuthor(author);
     }
 
     /**
@@ -114,7 +114,7 @@ public class ReaderController {
      */
     @GetMapping("/search/comic/by-author")
     public List<SearchResult> searchComicByAuthor(@RequestParam String author) {
-        return readerApi.searchComicByAuthor(author);
+        return readerFacade.searchComicByAuthor(author);
     }
 
     /**
@@ -128,7 +128,7 @@ public class ReaderController {
     public BookDetail bookInfo(
             @RequestParam String source,
             @RequestParam String bookUrl) {
-        return readerApi.getBookInfo(source, bookUrl);
+        return readerFacade.getBookInfo(source, bookUrl);
     }
 
     /**
@@ -142,7 +142,7 @@ public class ReaderController {
     public List<ChapterInfo> chapters(
             @RequestParam String source,
             @RequestParam String bookUrl) {
-        return readerApi.getChapterList(source, bookUrl);
+        return readerFacade.getChapterList(source, bookUrl);
     }
 
     /**
@@ -158,7 +158,7 @@ public class ReaderController {
             @RequestParam String source,
             @RequestParam String bookUrl,
             @RequestParam int chapterIndex) {
-        String text = readerApi.getBookContent(source, bookUrl, chapterIndex);
+        String text = readerFacade.getBookContent(source, bookUrl, chapterIndex);
         Map<String, Object> result = new HashMap<>();
         result.put("content", text);
         result.put("isComic", text != null && text.contains("<img"));

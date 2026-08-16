@@ -53,3 +53,15 @@ reader:
     # 部署到服务器时必须显式配置，如 https://reader.example.com
     # 未配置时使用 http://localhost:8081 兜底
     base-url: ""
+  # 缓存配置（ReaderFacade 增强层）
+  cache:
+    # 搜索结果缓存过期时间（分钟），避免相同关键词短时间重复 HTTP 请求
+    search-expire-minutes: 10
+    # 书籍详情缓存过期时间（分钟），引擎内部仅缓存 Book 对象，详情 DTO 每次都重新请求
+    detail-expire-minutes: 60
+    # 章节目录缓存过期时间（分钟），目录在书籍不更新时相对稳定
+    chapter-list-expire-minutes: 120
+    # 单章正文缓存过期时间（分钟），用户可能反复阅读同一章
+    content-expire-minutes: 30
+    # 缓存最大条目数（每种缓存独立计算），超出时清除最旧条目
+    max-size: 500

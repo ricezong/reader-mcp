@@ -163,6 +163,56 @@
             max-width: 700px; width: 100%;
             padding: 24px; position: relative;
         }
+
+        /* ========== 正文弹窗可调整大小 ========== */
+        #contentModal .modal {
+            max-width: 900px;
+            width: var(--modal-w, 80%);
+            min-width: 320px;
+            min-height: 300px;
+            height: var(--modal-h, 80vh);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            overflow: hidden;
+        }
+        #contentModal .modal.fullscreen {
+            width: 100% !important;
+            height: 100% !important;
+            max-width: 100%;
+            border-radius: 0;
+            min-height: 100vh;
+        }
+        /* 拖拽调整大小的手柄 */
+        .modal-resize-handle {
+            position: absolute;
+            right: 0; bottom: 0;
+            width: 20px; height: 20px;
+            cursor: nwse-resize;
+            z-index: 10;
+            display: flex; align-items: flex-end; justify-content: flex-end;
+        }
+        .modal-resize-handle::after {
+            content: '';
+            display: block;
+            width: 12px; height: 12px;
+            border-right: 3px solid #ccc;
+            border-bottom: 3px solid #ccc;
+            border-bottom-right-radius: 3px;
+            transition: border-color 0.2s;
+        }
+        .modal-resize-handle:hover::after { border-color: var(--primary); }
+        /* 全屏/还原按钮 */
+        .modal-fullscreen-btn {
+            position: absolute; top: 16px; right: 56px;
+            font-size: 18px; cursor: pointer; color: #999;
+            border: none; background: none;
+            width: 36px; height: 36px;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 10;
+            transition: color 0.2s;
+        }
+        .modal-fullscreen-btn:hover { color: var(--primary); }
         .modal .close-btn {
             position: absolute; top: 16px; right: 20px;
             font-size: 24px; cursor: pointer; color: #999;
@@ -203,7 +253,7 @@
         .chapter-item .chapter-index { color: var(--text-muted); font-size: 12px; flex-shrink: 0; }
 
         /* 正文显示 */
-        .content-view { max-height: 500px; overflow-y: auto; padding: 8px; }
+        .content-view { flex: 1; overflow-y: auto; padding: 8px; min-height: 0; }
         .content-view .nav-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
         .content-view .nav-bar button {
             padding: 6px 16px; border: 1px solid #ddd; border-radius: 6px;
@@ -214,7 +264,7 @@
         .content-view .nav-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
         .content-view .nav-bar span { font-size: 13px; color: var(--text-muted); text-align: center; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .content-view .text-content { font-size: 15px; line-height: 1.8; white-space: pre-wrap; word-break: break-all; }
-        .content-view .comic-content img { max-width: 100%; display: block; margin: 8px auto; }
+        .content-view .comic-content img { max-width: 100%; display: block; margin: 4px auto; border-radius: 4px; }
 
         /* 加载中 */
         .loading { text-align: center; padding: 40px; color: var(--text-muted); font-size: 15px; }
@@ -260,6 +310,10 @@
                 padding: 16px;
                 padding-top: 52px;
             }
+            #contentModal .modal {
+                height: 100vh;
+                width: 100%;
+            }
             .modal .close-btn {
                 top: 12px; right: 12px;
                 width: 36px; height: 36px;
@@ -276,6 +330,9 @@
 
             /* 正文导航栏更紧凑 */
             .content-view .nav-bar button { padding: 8px 14px; font-size: 14px; }
+
+            /* 移动端隐藏拖拽手柄和全屏按钮（已全屏） */
+            .modal-resize-handle, .modal-fullscreen-btn { display: none; }
         }
 
         /* 手机（<=480px） */
@@ -370,10 +427,12 @@
 
 <!-- 正文弹窗 -->
 <div class="modal-overlay" id="contentModal">
-    <div class="modal">
+    <div class="modal" id="contentModalBox">
         <button class="close-btn" onclick="closeContentModal()" aria-label="关闭">&times;</button>
+        <button class="modal-fullscreen-btn" id="fullscreenBtn" onclick="toggleFullscreen()" aria-label="全屏" title="全屏/还原">&#x26F6;</button>
         <h2 id="contentTitle">正文</h2>
         <div class="content-view" id="contentArea"></div>
+        <div class="modal-resize-handle" id="resizeHandle" title="拖拽调整大小"></div>
     </div>
 </div>
 
@@ -386,6 +445,118 @@
     let novelSources = [];        // 小说源列表
     let comicSources = [];        // 漫画源列表
     let lastResults = [];
+
+    // ========== 正文弹窗大小调整 ==========
+    const MODAL_SIZE_KEY = 'reader_modal_size';
+    let isFullscreen = false;
+
+    /** 从 localStorage 恢复弹窗尺寸 */
+    function restoreModalSize() {
+        if (window.innerWidth <= 768) return; // 移动端全屏，跳过
+        try {
+            const saved = localStorage.getItem(MODAL_SIZE_KEY);
+            if (saved) {
+                const { w, h } = JSON.parse(saved);
+                const box = $('contentModalBox');
+                box.style.setProperty('--modal-w', w);
+                box.style.setProperty('--modal-h', h);
+            }
+        } catch (_) {}
+    }
+
+    /** 保存弹窗尺寸到 localStorage */
+    function saveModalSize(w, h) {
+        try { localStorage.setItem(MODAL_SIZE_KEY, JSON.stringify({ w, h })); } catch (_) {}
+    }
+
+    /** 全屏/还原切换 */
+    function toggleFullscreen() {
+        const box = $('contentModalBox');
+        isFullscreen = !isFullscreen;
+        if (isFullscreen) {
+            box.classList.add('fullscreen');
+            $('fullscreenBtn').innerHTML = '&#x21B1;'; // 还原图标
+            $('fullscreenBtn').title = '还原';
+        } else {
+            box.classList.remove('fullscreen');
+            $('fullscreenBtn').innerHTML = '&#x26F6;'; // 全屏图标
+            $('fullscreenBtn').title = '全屏';
+            restoreModalSize();
+        }
+    }
+
+    /** 初始化拖拽调整大小 */
+    function initResize() {
+        const handle = $('resizeHandle');
+        const box = $('contentModalBox');
+        let startX, startY, startW, startH;
+
+        handle.addEventListener('mousedown', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (isFullscreen) return; // 全屏时不可调整
+
+            startX = e.clientX;
+            startY = e.clientY;
+            const rect = box.getBoundingClientRect();
+            startW = rect.width;
+            startH = rect.height;
+
+            document.body.style.cursor = 'nwse-resize';
+            document.body.style.userSelect = 'none';
+
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+
+        // 触摸支持
+        handle.addEventListener('touchstart', e => {
+            if (isFullscreen) return;
+            e.preventDefault();
+            e.stopPropagation();
+
+            const touch = e.touches[0];
+            startX = touch.clientX;
+            startY = touch.clientY;
+            const rect = box.getBoundingClientRect();
+            startW = rect.width;
+            startH = rect.height;
+
+            document.addEventListener('touchmove', onMoveTouch, { passive: false });
+            document.addEventListener('touchend', onUp);
+        });
+
+        function onMove(e) {
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            const newW = Math.max(320, Math.min(window.innerWidth - 32, startW + dx));
+            const newH = Math.max(300, Math.min(window.innerHeight - 32, startH + dy));
+            box.style.setProperty('--modal-w', newW + 'px');
+            box.style.setProperty('--modal-h', newH + 'px');
+        }
+
+        function onMoveTouch(e) {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const dx = touch.clientX - startX;
+            const dy = touch.clientY - startY;
+            const newW = Math.max(320, Math.min(window.innerWidth - 32, startW + dx));
+            const newH = Math.max(300, Math.min(window.innerHeight - 32, startH + dy));
+            box.style.setProperty('--modal-w', newW + 'px');
+            box.style.setProperty('--modal-h', newH + 'px');
+        }
+
+        function onUp() {
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            const rect = box.getBoundingClientRect();
+            saveModalSize(rect.width + 'px', rect.height + 'px');
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            document.removeEventListener('touchmove', onMoveTouch);
+            document.removeEventListener('touchend', onUp);
+        }
+    }
 
     const $ = id => document.getElementById(id);
 
@@ -668,6 +839,16 @@
             const isComic = data.isComic || false;
             const total = chapterList.length;
 
+            // 漫画模式：自动放大弹窗（仅当用户没有自定义尺寸且非全屏时）
+            if (isComic && !isFullscreen && window.innerWidth > 768) {
+                const saved = localStorage.getItem(MODAL_SIZE_KEY);
+                if (!saved) {
+                    const box = $('contentModalBox');
+                    box.style.setProperty('--modal-w', '95vw');
+                    box.style.setProperty('--modal-h', '90vh');
+                }
+            }
+
             let navBar = `<div class="nav-bar">
                 <button onclick="showContent(${chapterIndex - 1})" ${chapterIndex <= 1 ? 'disabled' : ''}>上一章</button>
                 <span>第 ${chapterIndex} 章${total > 0 ? ' / 共 ' + total + ' 章' : ''}</span>
@@ -676,7 +857,9 @@
 
             let contentHtml;
             if (isComic) {
-                contentHtml = `<div class="comic-content">${text}</div>`;
+                // 前端兜底清洗：剥离 src 中可能残留的阅读 App header 元数据
+                let comicHtml = sanitizeComicSrc(text);
+                contentHtml = `<div class="comic-content">${comicHtml}</div>`;
             } else {
                 contentHtml = `<div class="text-content">${escapeHtml(text)}</div>`;
             }
@@ -733,8 +916,22 @@
         return [];
     }
 
+    /**
+     * 前端兜底清洗：剥离漫画 <img src> 中可能残留的阅读 App header 元数据。
+     * 后端已做正则清洗，此函数作为前端兜底，确保万无一失。
+     * 格式: src="https://xxx.jpg,{"headers":{"Referer": "https://xxx/"}}"
+     * → src="https://xxx.jpg"
+     */
+    function sanitizeComicSrc(html) {
+        if (!html) return '';
+        // 匹配 src="URL,{...}" 或 src='URL,{...}'，剥离尾部 JSON 元数据
+        return html.replace(/(src\s*=\s*["'])(https?:\/\/[^"',]+),\{.*\}(["'])/gi, '$1$2$3');
+    }
+
     // ---------- 初始化 ----------
     loadSources();
+    restoreModalSize();
+    initResize();
 </script>
 </body>
 </html>

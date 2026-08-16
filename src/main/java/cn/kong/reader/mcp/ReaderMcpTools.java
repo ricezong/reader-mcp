@@ -4,8 +4,8 @@ import cn.kong.app.engine.dto.BookDetail;
 import cn.kong.app.engine.dto.ChapterInfo;
 import cn.kong.app.engine.dto.SearchResult;
 import cn.kong.app.engine.dto.SourceInfo;
-import cn.kong.reader.service.ReaderApi;
-import cn.kong.reader.service.ReaderApi.DownloadResult;
+import cn.kong.reader.service.ReaderFacade;
+import cn.kong.reader.service.ReaderFacade.DownloadResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.annotation.Tool;
@@ -23,10 +23,10 @@ public class ReaderMcpTools {
 
     private static final Logger log = LoggerFactory.getLogger(ReaderMcpTools.class);
 
-    private final ReaderApi readerApi;
+    private final ReaderFacade readerFacade;
 
-    public ReaderMcpTools(ReaderApi readerApi) {
-        this.readerApi = readerApi;
+    public ReaderMcpTools(ReaderFacade readerFacade) {
+        this.readerFacade = readerFacade;
     }
 
     /** 列出书源（可选按类型筛选） */
@@ -35,15 +35,15 @@ public class ReaderMcpTools {
             @ToolParam(description = "书源类型筛选：novel=仅小说源，comic=仅漫画源，不传或空字符串=全部") String type) {
         try {
             if (type == null || type.isBlank()) {
-                return readerApi.listSources();
+                return readerFacade.listSources();
             }
             String t = type.trim().toLowerCase();
             if ("novel".equals(t)) {
-                return readerApi.listNovelSources();
+                return readerFacade.listNovelSources();
             } else if ("comic".equals(t)) {
-                return readerApi.listComicSources();
+                return readerFacade.listComicSources();
             }
-            return readerApi.listSources();
+            return readerFacade.listSources();
         } catch (Exception e) {
             log.error("MCP list_sources 调用失败: type={}", type, e);
             throw new RuntimeException("获取书源列表失败，请稍后重试");
@@ -59,9 +59,9 @@ public class ReaderMcpTools {
         try {
             int p = (page == null || page < 1) ? 1 : page;
             if (source != null && !source.isBlank()) {
-                return readerApi.searchBySource(keyword, source, p);
+                return readerFacade.searchBySource(keyword, source, p);
             }
-            return readerApi.searchNovel(keyword, p);
+            return readerFacade.searchNovel(keyword, p);
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
@@ -79,9 +79,9 @@ public class ReaderMcpTools {
         try {
             int p = (page == null || page < 1) ? 1 : page;
             if (source != null && !source.isBlank()) {
-                return readerApi.searchBySource(keyword, source, p);
+                return readerFacade.searchBySource(keyword, source, p);
             }
-            return readerApi.searchComic(keyword, p);
+            return readerFacade.searchComic(keyword, p);
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
@@ -95,7 +95,7 @@ public class ReaderMcpTools {
     public List<SearchResult> searchByAuthor(
             @ToolParam(description = "作者名") String author) {
         try {
-            return readerApi.searchNovelByAuthor(author);
+            return readerFacade.searchNovelByAuthor(author);
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
@@ -109,7 +109,7 @@ public class ReaderMcpTools {
     public List<SearchResult> searchComicByAuthor(
             @ToolParam(description = "作者名") String author) {
         try {
-            return readerApi.searchComicByAuthor(author);
+            return readerFacade.searchComicByAuthor(author);
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
@@ -119,12 +119,12 @@ public class ReaderMcpTools {
     }
 
     /** 获取书籍详情 */
-    @Tool(name = "book_info", description = "获取书籍详情（作者、简介、封面、字数、最新章节等）")
+    @Tool(name = "book_info", description = "获取书籍详情（书名、作者、简介、封面URL、字数、最新章节标题、来源简称等）。需要先通过搜索接口获取 source 和 bookUrl。")
     public BookDetail bookInfo(
             @ToolParam(description = "书源简称（如 80、dubu）") String source,
             @ToolParam(description = "书籍 URL") String bookUrl) {
         try {
-            return readerApi.getBookInfo(source, bookUrl);
+            return readerFacade.getBookInfo(source, bookUrl);
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
@@ -139,7 +139,7 @@ public class ReaderMcpTools {
             @ToolParam(description = "书源简称") String source,
             @ToolParam(description = "书籍 URL") String bookUrl) {
         try {
-            return readerApi.getChapterList(source, bookUrl);
+            return readerFacade.getChapterList(source, bookUrl);
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
@@ -149,13 +149,13 @@ public class ReaderMcpTools {
     }
 
     /** 获取单章正文（章节序号从 1 开始，内部转换为引擎的 0-based） */
-    @Tool(name = "content", description = "获取指定章节的正文内容（章节序号从 1 开始），返回正文文本")
+    @Tool(name = "content", description = "获取指定章节的正文内容（章节序号从 1 开始）。小说返回纯文本，漫画返回包含 <img> 标签的 HTML。后端自动清洗漫画图片 URL 中的元数据，确保图片可直接加载。")
     public String content(
             @ToolParam(description = "书源简称") String source,
             @ToolParam(description = "书籍 URL") String bookUrl,
             @ToolParam(description = "章节序号（从 1 开始）") int chapterIndex) {
         try {
-            return readerApi.getBookContent(source, bookUrl, chapterIndex);
+            return readerFacade.getBookContent(source, bookUrl, chapterIndex);
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
@@ -172,7 +172,7 @@ public class ReaderMcpTools {
             @ToolParam(description = "起始章节序号（从 1 开始）") int start,
             @ToolParam(description = "结束章节序号") int end) {
         try {
-            return readerApi.downloadChapters(source, bookUrl, start, end);
+            return readerFacade.downloadChapters(source, bookUrl, start, end);
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {

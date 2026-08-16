@@ -149,7 +149,7 @@ public class ReaderMcpTools {
     }
 
     /** 获取单章正文（章节序号从 1 开始，内部转换为引擎的 0-based） */
-    @Tool(name = "content", description = "获取指定章节的正文内容（章节序号从 1 开始）。小说返回纯文本，漫画返回包含 <img> 标签的 HTML。后端自动清洗漫画图片 URL 中的元数据，确保图片可直接加载。")
+    @Tool(name = "content", description = "获取指定章节的正文内容（章节序号从 1 开始）。小说返回纯文本，漫画返回包含 <img> 标签的 HTML。")
     public String content(
             @ToolParam(description = "书源简称") String source,
             @ToolParam(description = "书籍 URL") String bookUrl,

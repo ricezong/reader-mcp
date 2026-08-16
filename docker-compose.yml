@@ -16,9 +16,15 @@ services:
       - READER_DOWNLOAD_EXPIRE_HOURS=24
       # 服务外部访问基础 URL（部署时改为实际域名/IP）
       # - READER_DOWNLOAD_BASE_URL=https://reader.example.com
-      # 可通过环境变量覆盖配置
+      # 搜索/下载限制
       # - READER_MAX_SEARCH_RESULTS=50
       # - READER_MAX_DOWNLOAD_CHAPTERS=200
+      # 缓存配置（TTL 分钟，可按需调整）
+      # - READER_CACHE_SEARCH_EXPIRE_MINUTES=10
+      # - READER_CACHE_DETAIL_EXPIRE_MINUTES=60
+      # - READER_CACHE_CHAPTER_LIST_EXPIRE_MINUTES=120
+      # - READER_CACHE_CONTENT_EXPIRE_MINUTES=30
+      # - READER_CACHE_MAX_SIZE=500
     volumes:
       # 下载文件持久化卷（容器重启后保留未过期的文件）
       - reader-downloads:/app/downloads

@@ -6,11 +6,14 @@
 
 ## 功能
 
-- **多书源聚合搜索** — 并行搜索所有小说源或漫画源，支持指定单源或全源聚合
-- **书籍详情** — 作者、简介、封面、字数、分类等
+- **多书源聚合搜索** — 并行搜索所有小说源或漫画源，支持指定单源或全源聚合，支持分页
+- **按作者搜索** — 聚合所有小说源或漫画源，按作者名查询其全部作品
+- **书籍详情** — 书名、作者、简介、封面、字数、最新章节、来源等
 - **章节目录** — 完整章节列表（序号、标题、URL）
-- **单章正文** — 获取指定章节内容
+- **单章正文** — 获取指定章节内容；小说返回纯文本，漫画返回图片 HTML（后端自动清洗图片 URL 元数据）
 - **批量下载** — 并发下载多章正文，暂存为 TXT 文件并提供 HTTP 下载链接（24 小时有效）
+- **多级缓存** — 搜索结果 10 分钟、书籍详情 1 小时、章节目录 2 小时、单章正文 30 分钟，减少重复 HTTP 请求
+- **Web 界面** — 内置响应式搜索页面，支持小说/漫画搜索、在线阅读、漫画图片展示、弹窗可调整大小
 - **内置 8 个书源** — 4 个小说源 + 4 个漫画源，开箱即用
 
 ## 快速开始
@@ -75,9 +78,9 @@ URL: http://localhost:8081/mcp
 | `search_comic` | 按关键词搜索漫画 | `keyword`（必填）、`source`（可选，书源简称）、`page`（可选，默认 1） |
 | `search_novel_by_author` | 按作者搜索小说 | `author`（必填），聚合所有小说源 |
 | `search_comic_by_author` | 按作者搜索漫画 | `author`（必填），聚合所有漫画源 |
-| `book_info` | 获取书籍详情 | `source`（书源简称，从搜索结果获取）、`bookUrl` |
+| `book_info` | 获取书籍详情（书名、作者、简介、封面、字数、最新章节等） | `source`（书源简称，从搜索结果获取）、`bookUrl` |
 | `chapters` | 获取章节目录 | `source`（书源简称）、`bookUrl` |
-| `content` | 获取单章正文 | `source`（书源简称）、`bookUrl`、`chapterIndex`（从 1 开始） |
+| `content` | 获取单章正文（小说返回纯文本，漫画返回图片 HTML） | `source`（书源简称）、`bookUrl`、`chapterIndex`（从 1 开始） |
 | `download` | 批量下载章节并返回下载链接 | `source`（书源简称）、`bookUrl`、`start`、`end` |
 
 ### 典型调用流程
@@ -138,6 +141,12 @@ reader:
     temp-dir: /tmp/reader-downloads   # 临时文件存放目录
     expire-hours: 24                   # 文件过期时间（小时）
     base-url: ""                       # 服务外部访问 URL（部署时必须配置，如 https://reader.example.com）
+  cache:
+    search-expire-minutes: 10         # 搜索结果缓存过期时间（分钟）
+    detail-expire-minutes: 60         # 书籍详情缓存过期时间（分钟）
+    chapter-list-expire-minutes: 120  # 章节目录缓存过期时间（分钟）
+    content-expire-minutes: 30        # 单章正文缓存过期时间（分钟）
+    max-size: 500                     # 缓存最大条目数（每种缓存独立计算）
 ```
 
 ### 下载文件
@@ -154,24 +163,25 @@ reader:
 cn.kong.reader/
 ├── ReaderApplication.java           # 启动类（@EnableScheduling）
 ├── config/
+│   ├── CacheProperties.java          # 缓存配置属性（TTL、最大容量）
 │   ├── EngineConfig.java             # 引擎配置（ReaderService Bean 注册）
-│   ├── GlobalExceptionHandler.java    # 全局异常处理（统一 HTTP 状态码）
+│   ├── McpToolConfig.java            # MCP 工具注册配置（ToolCallbackProvider）
 │   ├── TempFileProperties.java       # 临时文件配置属性
 │   └── WebConfig.java                # Web 配置（根路径转发到 index.html）
 ├── controller/
+│   ├── GlobalExceptionHandler.java   # 全局异常处理（统一 HTTP 状态码）
 │   └── ReaderController.java         # REST API（搜索/详情/目录/正文/下载）
 ├── mcp/
-│   ├── McpToolConfig.java            # MCP 工具注册配置
-│   └── ReaderMcpTools.java           # 8 个 MCP 工具定义
+│   └── ReaderMcpTools.java           # 9 个 MCP 工具定义
 ├── service/
-│   ├── ReaderApi.java                # 业务逻辑（搜索/详情/目录/正文/下载）
+│   ├── ReaderFacade.java             # 增强门面层（缓存/参数校验/漫画清洗/下载）
 │   └── TempFileService.java          # 临时文件管理（创建/查询/清理）
 └── task/
     └── FileCleanupTask.java          # 定时清理过期文件
 
 src/main/resources/
 └── static/
-    └── index.html                    # Web 搜索页面
+    └── index.html                    # Web 搜索页面（响应式/弹窗可调整大小）
 ```
 
 ### 技术栈
@@ -185,8 +195,10 @@ src/main/resources/
 
 ### 核心设计
 
-- **引擎委托**：业务逻辑层直接调用 `ReaderService` 高层 API，只需传入书源简称和书籍 URL，引擎内部通过 `ReaderEngineBridge.kt` 的 `runBlocking` 将 Kotlin suspend 函数桥接为同步调用
-- **Book 缓存**：引擎内部以 `source + bookUrl` 为 key 缓存 Book 对象，避免获取目录和正文时重复请求详情页
+- **引擎委托**：`ReaderFacade` 门面层直接调用 `ReaderService` 高层 API，只需传入书源简称和书籍 URL，引擎内部通过 `ReaderEngineBridge.kt` 的 `runBlocking` 将 Kotlin suspend 函数桥接为同步调用
+- **门面增强层（`ReaderFacade`）**：在引擎之上提供多级缓存（`ConcurrentHashMap` + TTL + 后台清理）、参数校验（关键词长度、页码合法性）、搜索结果数量限制、下载章节数限制、漫画图片 URL 清洗等增强能力
+- **引擎层 Book 缓存**：引擎内部以 `source + bookUrl` 为 key 缓存 Book 对象，避免获取目录和正文时重复请求详情页
 - **通用 DTO**：书源信息（`SourceInfo`）、搜索结果（`SearchResult`）、书籍详情（`BookDetail`）、章节信息（`ChapterInfo`）、章节正文（`ChapterContent`）均为通用 DTO，不暴露内部实体对象
 - **ReaderService 单例**：内置 8 个书源（4 小说 + 4 漫画），开箱即用
 - **临时文件管理**：下载内容写入临时文件，定时清理过期文件（默认 24 小时），通过 `/api/reader/download/{fileId}` 端点提供远程下载
+- **漫画图片清洗**：引擎返回的漫画图片 URL 可能附带 `,{"headers":{"Referer":...}}` 格式的元数据，`ReaderFacade` 自动剥离，确保前端可直接加载图片

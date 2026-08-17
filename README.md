@@ -73,20 +73,20 @@ URL: http://localhost:8081/mcp
 
 | 工具 | 说明 | 关键参数 |
 |------|------|----------|
-| `list_sources` | 列出书源（可按类型筛选） | `type`（可选：`novel`=仅小说源，`comic`=仅漫画源，空=全部） |
-| `search_novel` | 按关键词搜索小说 | `keyword`（必填）、`source`（可选，书源简称）、`page`（可选，默认 1） |
-| `search_comic` | 按关键词搜索漫画 | `keyword`（必填）、`source`（可选，书源简称）、`page`（可选，默认 1） |
-| `search_novel_by_author` | 按作者搜索小说 | `author`（必填），聚合所有小说源 |
-| `search_comic_by_author` | 按作者搜索漫画 | `author`（必填），聚合所有漫画源 |
-| `book_info` | 获取书籍详情（书名、作者、简介、封面、字数、最新章节等） | `source`（书源简称，从搜索结果获取）、`bookUrl` |
-| `chapters` | 获取章节目录 | `source`（书源简称）、`bookUrl` |
-| `content` | 获取单章正文（小说返回纯文本，漫画返回图片 HTML） | `source`（书源简称）、`bookUrl`、`chapterIndex`（从 1 开始） |
-| `download` | 批量下载章节并返回下载链接 | `source`（书源简称）、`bookUrl`、`start`、`end` |
+| `reader_list_sources` | 列出书源（可按类型筛选） | `type`（可选：`novel`=仅小说源，`comic`=仅漫画源，空=全部） |
+| `reader_search_novel` | 按关键词搜索小说 | `keyword`（必填）、`source`（可选，书源简称）、`page`（可选，默认 1） |
+| `reader_search_comic` | 按关键词搜索漫画 | `keyword`（必填）、`source`（可选，书源简称）、`page`（可选，默认 1） |
+| `reader_search_novel_by_author` | 按作者搜索小说 | `author`（必填），聚合所有小说源 |
+| `reader_search_comic_by_author` | 按作者搜索漫画 | `author`（必填），聚合所有漫画源 |
+| `reader_book_info` | 获取书籍详情（书名、作者、简介、封面、字数、最新章节等） | `source`（书源简称，从搜索结果获取）、`bookUrl` |
+| `reader_chapters` | 获取章节目录 | `source`（书源简称）、`bookUrl` |
+| `reader_content` | 获取单章正文（小说返回纯文本，漫画返回图片 HTML） | `source`（书源简称）、`bookUrl`、`chapterIndex`（从 1 开始） |
+| `reader_download` | 批量下载章节并返回下载链接 | `source`（书源简称）、`bookUrl`、`start`、`end` |
 
 ### 典型调用流程
 
 ```
-list_sources → search_novel / search_comic → book_info → chapters → content / download
+reader_list_sources → reader_search_novel / reader_search_comic → reader_book_info → reader_chapters → reader_content / reader_download
 ```
 
 ## 内置书源
@@ -151,7 +151,7 @@ reader:
 
 ### 下载文件
 
-`download` 工具下载完成后，将内容暂存为 TXT 文件，返回包含 `downloadUrl` 的结果。
+`reader_download` 工具下载完成后，将内容暂存为 TXT 文件，返回包含 `downloadUrl` 的结果。
 
 - 下载链接格式：`GET /api/reader/download/{fileId}`
 - 文件默认 24 小时后自动过期清理

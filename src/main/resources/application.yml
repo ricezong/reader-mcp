@@ -52,7 +52,7 @@ reader:
     # 服务外部访问基础 URL，用于拼接下载链接
     # 部署到服务器时必须显式配置，如 https://reader.example.com
     # 未配置时使用 http://localhost:8081 兜底
-    base-url: ""
+    base-url: "http://124.223.110.114:8081"
   # 缓存配置（ReaderFacade 增强层）
   cache:
     # 搜索结果缓存过期时间（分钟），避免相同关键词短时间重复 HTTP 请求

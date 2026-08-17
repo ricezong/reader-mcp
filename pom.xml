@@ -49,7 +49,7 @@
             <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
         </dependency>
 
-        <!-- reader-engine 引擎（fat jar 已内含 rhino-android） -->
+        <!-- reader-engine 引擎 -->
         <dependency>
             <groupId>cn.kong</groupId>
             <artifactId>reader-engine</artifactId>

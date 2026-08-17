@@ -12,40 +12,40 @@ description: 搜索和下载网络小说/漫画正文。当用户想搜索小说
 根据用户需求选择合适的流程：
 
 ### 搜索书籍
-1. 调用 `list_sources` 获取可用书源列表（可传 `type` 参数筛选：`novel`=小说源，`comic`=漫画源，空=全部）
-2. 调用 `search_novel`（小说）或 `search_comic`（漫画）搜索关键词，默认聚合所有书源；若传入 `source` 简称则只搜索该源。支持传入 `page` 翻页（默认第 1 页）
+1. 调用 `reader_list_sources` 获取可用书源列表（可传 `type` 参数筛选：`novel`=小说源，`comic`=漫画源，空=全部）
+2. 调用 `reader_search_novel`（小说）或 `reader_search_comic`（漫画）搜索关键词，默认聚合所有书源；若传入 `source` 简称则只搜索该源。支持传入 `page` 翻页（默认第 1 页）
 3. 展示搜索结果，让用户选择目标书籍（搜索结果中包含 source 字段，后续操作需传入）
 
 ### 阅读单章
-1. 搜索并确定书籍后，调用 `chapters` 获取章节目录
-2. 调用 `content` 获取指定章节正文（`chapterIndex` 从 1 开始）
+1. 搜索并确定书籍后，调用 `reader_chapters` 获取章节目录
+2. 调用 `reader_content` 获取指定章节正文（`chapterIndex` 从 1 开始）
 3. 小说返回纯文本，漫画返回包含 `<img>` 标签的 HTML（后端已自动清洗图片 URL，可直接渲染）
 
 ### 批量下载
-1. 搜索并确定书籍后，调用 `chapters` 获取章节目录
-2. 调用 `download` 批量下载（传入 `start` 和 `end` 章节序号）
+1. 搜索并确定书籍后，调用 `reader_chapters` 获取章节目录
+2. 调用 `reader_download` 批量下载（传入 `start` 和 `end` 章节序号）
 3. 下载结果返回文件下载 URL（`downloadUrl`，24小时有效）、文件名、下载统计信息（成功/失败数、总字数）
 
 ## 最佳实践
 
-- **先列书源再搜索**：如果用户没有指定书源，先调用 `list_sources` 让用户选择。可传 `type` 参数筛选小说源或漫画源
-- **指定书源搜索**：`search_novel` 和 `search_comic` 支持传入 `source` 简称，只搜索该源；不传则聚合所有源
+- **先列书源再搜索**：如果用户没有指定书源，先调用 `reader_list_sources` 让用户选择。可传 `type` 参数筛选小说源或漫画源
+- **指定书源搜索**：`reader_search_novel` 和 `reader_search_comic` 支持传入 `source` 简称，只搜索该源；不传则聚合所有源
 - **分批下载**：单次下载不超过 50 章，避免请求超时；大量章节分多次调用
 - **复用 source 和 bookUrl**：从搜索结果中获取的 `source` 和 `bookUrl` 直接传给后续工具（详情/目录/正文/下载）
-- **先看目录再下载**：下载前先调用 `chapters` 确认章节范围，避免下载到无关内容
-- **小说 vs 漫画**：小说用 `search_novel`，漫画用 `search_comic`
+- **先看目录再下载**：下载前先调用 `reader_chapters` 确认章节范围，避免下载到无关内容
+- **小说 vs 漫画**：小说用 `reader_search_novel`，漫画用 `reader_search_comic`
 
 ## 常见场景
 
 | 用户需求 | 调用顺序 |
 |----------|----------|
-| "搜索斗破苍穹" | `list_sources` → `search_novel` |
-| "在八零小说源搜索斗破苍穹" | `search_novel`（传入 `source=80`） |
-| "搜索漫画哑舍" | `list_sources` → `search_comic` |
-| "只搜索漫画台的漫画" | `search_comic`（传入 `source=manhuatai`） |
-| "搜索并阅读第1章" | `search_novel` → `chapters` → `content` |
-| "下载前100章" | `search_novel` → `chapters` → `download`（分 2 批：1-50, 51-100）|
-| "看看有哪些小说源" | `list_sources`（传入 `type=novel`） |
-| "按作者搜索小说" | `list_sources` → `search_novel_by_author` |
-| "按作者搜索漫画" | `list_sources` → `search_comic_by_author` |
-| "搜索第2页小说" | `search_novel`（传入 `page=2`） |
+| "搜索斗破苍穹" | `reader_list_sources` → `reader_search_novel` |
+| "在八零小说源搜索斗破苍穹" | `reader_search_novel`（传入 `source=80`） |
+| "搜索漫画哑舍" | `reader_list_sources` → `reader_search_comic` |
+| "只搜索漫画台的漫画" | `reader_search_comic`（传入 `source=manhuatai`） |
+| "搜索并阅读第1章" | `reader_search_novel` → `reader_chapters` → `reader_content` |
+| "下载前100章" | `reader_search_novel` → `reader_chapters` → `reader_download`（分 2 批：1-50, 51-100）|
+| "看看有哪些小说源" | `reader_list_sources`（传入 `type=novel`） |
+| "按作者搜索小说" | `reader_list_sources` → `reader_search_novel_by_author` |
+| "按作者搜索漫画" | `reader_list_sources` → `reader_search_comic_by_author` |
+| "搜索第2页小说" | `reader_search_novel`（传入 `page=2`） |
